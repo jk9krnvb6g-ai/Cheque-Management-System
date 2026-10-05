@@ -1,0 +1,173 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --app-font: 'Prompt', 'Noto Sans Thai', 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  }
+
+  html[data-font="prompt"], body[data-font="prompt"] {
+    --app-font: 'Prompt', 'Noto Sans Thai', 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  }
+
+  html[data-font="noto"], body[data-font="noto"] {
+    --app-font: 'Noto Sans Thai', 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  }
+
+  html[data-font="ibm"], body[data-font="ibm"] {
+    --app-font: 'IBM Plex Sans Thai', 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  }
+
+  html[data-font="sarabun"], body[data-font="sarabun"] {
+    --app-font: 'Sarabun', 'TH Sarabun New', system-ui, -apple-system, sans-serif;
+  }
+
+  html,
+  body {
+    font-family: var(--app-font);
+    color: #0f172a;
+    background-color: #f8fafc;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  button, input, select, textarea {
+    font-family: var(--app-font);
+  }
+
+  /* Official Thai Government & Bank Font for actual cheque coordinates and printing */
+  .cheque-field-text {
+    font-family: var(--cheque-font, 'Sarabun', 'TH Sarabun New', 'Cordia New', sans-serif) !important;
+    line-height: 1 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    box-sizing: border-box !important;
+  }
+}
+
+/* Custom tabular numerals */
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Print Styles */
+@media print {
+  /* Default page settings for cheques - Force zero margin */
+  @page {
+    margin: 0 !important;
+    size: auto;
+  }
+
+  html,
+  body {
+    background: transparent !important;
+    color: #000 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  /* Hide everything except the designated print target */
+  .no-print,
+  nav,
+  header,
+  aside,
+  button,
+  .modal-overlay-backdrop {
+    display: none !important;
+  }
+
+  /* When printing a cheque */
+  body.printing-cheque * {
+    visibility: hidden;
+  }
+
+  body.printing-cheque #cheque-print-zone,
+  body.printing-cheque #cheque-print-zone * {
+    visibility: visible;
+  }
+
+  body.printing-cheque #cheque-print-zone {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+    border: none !important;
+    background: transparent !important;
+  }
+
+  /* Feed direction rotations during physical print */
+  body.printing-cheque #cheque-print-zone.feed-direction-landscape-normal {
+    transform: none !important;
+  }
+
+  body.printing-cheque #cheque-print-zone.feed-direction-landscape-flipped {
+    transform: rotate(180deg) translate(-100%, -100%) !important;
+    transform-origin: top left !important;
+  }
+
+  body.printing-cheque #cheque-print-zone.feed-direction-portrait-top {
+    transform: rotate(90deg) translateY(-100%) !important;
+    transform-origin: top left !important;
+  }
+
+  body.printing-cheque #cheque-print-zone.feed-direction-portrait-bottom {
+    transform: rotate(270deg) translateX(-100%) !important;
+    transform-origin: top left !important;
+  }
+
+  /* Strictly hide reference background image during print */
+  .cheque-background-guide {
+    display: none !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+  }
+
+  /* When printing A4 Alignment Test Sheet */
+  body.printing-test-sheet #cheque-print-zone {
+    border: 1.5px dashed #334155 !important;
+    background: #ffffff !important;
+    box-sizing: border-box !important;
+  }
+
+  body.printing-test-sheet .test-sheet-guide {
+    display: block !important;
+    visibility: visible !important;
+    color: #1e293b !important;
+  }
+
+  body:not(.printing-test-sheet) .test-sheet-guide {
+    display: none !important;
+  }
+
+  /* Ensure text fields are pure black and sharp */
+  .cheque-field-text {
+    color: #000000 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+    font-weight: 600 !important;
+  }
+
+  /* When printing Executive Report */
+  body.printing-report * {
+    visibility: hidden;
+  }
+
+  body.printing-report #executive-report-print-zone,
+  body.printing-report #executive-report-print-zone * {
+    visibility: visible;
+  }
+
+  body.printing-report #executive-report-print-zone {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 15mm 20mm !important;
+    box-shadow: none !important;
+    border: none !important;
+    background: #fff !important;
+  }
+}

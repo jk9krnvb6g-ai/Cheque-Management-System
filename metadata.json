@@ -1,0 +1,6 @@
+{
+  "name": "ระบบจัดทำและพิมพ์เช็ค (Cheque Management System)",
+  "description": "ระบบบันทึก จัดทำ ตรวจสอบ และพิมพ์เช็คราชการและองค์กร (KTB / BAAC / GSB) รองรับการตรวจสอบย้อนหลัง สรุปเสนอผู้บริหาร และพิมพ์เช็คความละเอียดสูง",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
