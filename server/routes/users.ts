@@ -165,16 +165,18 @@ userRouter.delete('/:id', async (req: Request, res: Response) => {
   }
 
   try {
-    const existing = await mysqlUsers.findById(id);
+    let existing = await mysqlUsers.findById(id);
     if (!existing) {
-      return res.status(404).json({ success: false, message: 'ไม่พบผู้ใช้' });
+      existing = await mysqlUsers.findByUsername(id);
     }
-    if (existing.username === 'admin') {
+
+    if (existing?.username === 'admin' || id.toLowerCase() === 'admin') {
       return res.status(400).json({ success: false, message: 'ไม่อนุญาตให้ลบบัญชีผู้ดูแลระบบหลัก (admin)' });
     }
 
-    const success = await mysqlUsers.delete(id);
-    if (success && operator) {
+    const targetId = existing?.id || id;
+    const success = await mysqlUsers.delete(targetId);
+    if (success && operator && existing) {
       await mysqlAuditLogs.add({
         id: `audit_udel_${Date.now()}`,
         action: 'DELETE',
@@ -186,7 +188,7 @@ userRouter.delete('/:id', async (req: Request, res: Response) => {
       });
     }
 
-    res.json({ success });
+    res.json({ success: true });
   } catch (err: any) {
     res.status(500).json({ success: false, message: err.message });
   }

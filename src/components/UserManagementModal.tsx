@@ -188,6 +188,7 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
     StorageService.toggleUserStatus(targetUser.id, currentUser);
     loadUsers();
     setSuccessMsg(`เปลี่ยนสถานะบัญชี ${targetUser.fullName} สำเร็จ`);
+    if (onRefreshData) onRefreshData();
   };
 
   // Approve pending user
@@ -203,6 +204,7 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
     StorageService.updateUserRole(targetUser.id, newRole, currentUser);
     loadUsers();
     setSuccessMsg(`ปรับสิทธิ์ ${targetUser.fullName} เป็น ${newRole} สำเร็จ`);
+    if (onRefreshData) onRefreshData();
   };
 
   // Confirm delete user
@@ -221,6 +223,7 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
     loadUsers();
     setDeleteTarget(null);
     setSuccessMsg(`ลบบัญชีผู้ใช้ ${targetUser.fullName} เรียบร้อยแล้ว`);
+    if (onRefreshData) onRefreshData();
   };
 
   // Open Edit User Modal
