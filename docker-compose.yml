@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  cheque-system:
+    build: .
+    container_name: cheque-app
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+    volumes:
+      - cheque_data:/app/data
+
+volumes:
+  cheque_data:

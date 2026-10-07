@@ -544,45 +544,96 @@ export class StorageService {
 
   // Auth & Session
   static getCurrentUser(): User | null {
-    const raw = localStorage.getItem(STORAGE_KEYS.CURRENT_USER);
-    if (!raw) return null;
+    // 1. Check active browser session storage
     try {
-      return JSON.parse(raw);
+      const sessionRaw = sessionStorage.getItem(STORAGE_KEYS.CURRENT_USER);
+      if (sessionRaw) {
+        return JSON.parse(sessionRaw);
+      }
     } catch {
-      return null;
+      // ignore
     }
+
+    // 2. Only restore from persistent local storage if "Remember Me" was explicitly checked
+    const isRemembered = localStorage.getItem('cheque_sys_remember_me') === 'true';
+    if (isRemembered) {
+      try {
+        const localRaw = localStorage.getItem(STORAGE_KEYS.CURRENT_USER);
+        if (localRaw) {
+          return JSON.parse(localRaw);
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    // Default: return null so the Login page is always the default first screen
+    return null;
   }
 
-  static setCurrentUser(user: User | null): void {
+  static setCurrentUser(user: User | null, remember: boolean = false): void {
     if (!user) {
+      sessionStorage.removeItem(STORAGE_KEYS.CURRENT_USER);
       localStorage.removeItem(STORAGE_KEYS.CURRENT_USER);
+      localStorage.removeItem('cheque_sys_remember_me');
     } else {
-      localStorage.setItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(user));
+      sessionStorage.setItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(user));
+      if (remember) {
+        localStorage.setItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(user));
+        localStorage.setItem('cheque_sys_remember_me', 'true');
+      } else {
+        localStorage.removeItem(STORAGE_KEYS.CURRENT_USER);
+        localStorage.removeItem('cheque_sys_remember_me');
+      }
     }
   }
 
-  static async authenticate(username: string, passwordPlain: string): Promise<User | null> {
+  static async authenticateDetailed(
+    username: string,
+    passwordPlain: string,
+    remember: boolean = false
+  ): Promise<{ success: boolean; user?: User; error?: string }> {
     const users = this.getUsers();
     const target = users.find(u => u.username.toLowerCase() === username.trim().toLowerCase());
-    if (!target) return null;
-    if (target.status !== 'ACTIVE') return null;
+    if (!target) {
+      return { success: false, error: 'ชื่อผู้ใช้งานหรือรหัสผ่านไม่ถูกต้อง' };
+    }
 
-    // Check hash or direct match for demo
     const calculatedHash = await hashPassword(passwordPlain);
     const isValid = target.passwordHash === calculatedHash ||
                     (passwordPlain === 'admin123' && target.username === 'admin') ||
                     (passwordPlain === '1234' && (target.username === 'somchai' || target.username === 'suda' || target.username === 'surachai'));
 
-    if (isValid) {
-      this.setCurrentUser(target);
-      this.addAuditLog({
-        action: 'LOGIN',
-        target: `ระบบ`,
-        details: `ผู้ใช้ ${target.fullName} เข้าสู่ระบบสำเร็จ`,
-      }, target);
-      return target;
+    if (!isValid) {
+      return { success: false, error: 'ชื่อผู้ใช้งานหรือรหัสผ่านไม่ถูกต้อง' };
     }
-    return null;
+
+    if (target.status === 'PENDING') {
+      return {
+        success: false,
+        error: 'บัญชีของคุณอยู่ระหว่าง "รอการอนุมัติสิทธิ์" จากผู้ดูแลระบบ (Admin) กรุณาแจ้งหัวหน้าฝ่ายการเงินหรือผู้ดูแลระบบเพื่อเปิดใช้งาน',
+      };
+    }
+
+    if (target.status === 'INACTIVE') {
+      return {
+        success: false,
+        error: 'บัญชีนี้ถูกระงับการใช้งาน กรุณาติดต่อผู้ดูแลระบบ',
+      };
+    }
+
+    this.setCurrentUser(target, remember);
+    this.addAuditLog({
+      action: 'LOGIN',
+      target: `ระบบ`,
+      details: `ผู้ใช้ ${target.fullName} เข้าสู่ระบบสำเร็จ`,
+    }, target);
+    return { success: true, user: target };
+  }
+
+  static async authenticate(username: string, passwordPlain: string, remember: boolean = false): Promise<User | null> {
+    const res = await this.authenticateDetailed(username, passwordPlain, remember);
+    return res.user || null;
   }
 
   static isUsernameAvailable(username: string): boolean {
@@ -603,6 +654,7 @@ export class StorageService {
     options?: {
       autoLogin?: boolean;
       operator?: User;
+      status?: UserStatus;
     }
   ): Promise<{ success: boolean; user?: User; error?: string }> {
     const usernameClean = data.username.trim().toLowerCase();
@@ -626,6 +678,8 @@ export class StorageService {
     }
 
     const passwordHash = await hashPassword(data.passwordPlain);
+    // If registered by Admin operator, active by default; if self-registered, status is PENDING awaiting approval
+    const defaultStatus: UserStatus = options?.status || (options?.operator ? 'ACTIVE' : 'PENDING');
     const newUser: User = {
       id: 'user_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
       username: usernameClean,
@@ -633,7 +687,7 @@ export class StorageService {
       fullName: data.fullName.trim(),
       position: data.position?.trim() || 'เจ้าหน้าที่การเงินและบัญชี',
       role: data.role || 'USER',
-      status: 'ACTIVE',
+      status: defaultStatus,
       createdAt: new Date().toISOString(),
     };
 
@@ -645,15 +699,29 @@ export class StorageService {
       action: 'CREATE',
       target: `ลงทะเบียนผู้ใช้: ${newUser.username}`,
       details: options?.operator
-        ? `${options.operator.fullName} ได้ลงทะเบียนสมาชิกใหม่ให้: ${newUser.fullName} (${newUser.position}) สิทธิ์: ${newUser.role}`
-        : `สมัครสมาชิกผู้ใช้งานใหม่: ${newUser.fullName} (${newUser.position}) สิทธิ์: ${newUser.role}`,
+        ? `${options.operator.fullName} ได้ลงทะเบียนสมาชิกใหม่ให้: ${newUser.fullName} (${newUser.position}) สิทธิ์: ${newUser.role} [สถานะ: ${newUser.status}]`
+        : `สมัครสมาชิกใหม่ (รอการอนุมัติสิทธิ์): ${newUser.fullName} (${newUser.position}) สิทธิ์: ${newUser.role}`,
     }, auditActor);
 
-    if (options?.autoLogin !== false) {
+    if (options?.autoLogin === true && defaultStatus === 'ACTIVE') {
       this.setCurrentUser(newUser);
     }
 
     return { success: true, user: newUser };
+  }
+
+  static approveUser(userId: string, operator: User): User | null {
+    const users = this.getUsers();
+    const user = users.find(u => u.id === userId);
+    if (!user) return null;
+    user.status = 'ACTIVE';
+    localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users));
+    this.addAuditLog({
+      action: 'UPDATE',
+      target: `อนุมัติผู้ใช้: ${user.username}`,
+      details: `${operator.fullName} ได้อนุมัติการใช้งานให้แก่: ${user.fullName} (${user.position})`,
+    }, operator);
+    return user;
   }
 
   static toggleUserStatus(userId: string, operator: User): User | null {

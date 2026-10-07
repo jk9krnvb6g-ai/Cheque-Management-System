@@ -6,6 +6,8 @@ import { ChequeBackground } from './ChequeBackground';
 import { ZoomController } from './ZoomController';
 import { AddTemplateModal } from './AddTemplateModal';
 import { PrinterFeedGuide, FEED_DIRECTION_LABELS } from './PrinterFeedGuide';
+import { printChequeElement } from '../utils/printUtils';
+import { generateChequePdf } from '../utils/pdfGenerator';
 import {
   Printer,
   X,
@@ -21,6 +23,7 @@ import {
   Plus,
   ChevronLeft,
   ChevronRight,
+  Download,
 } from 'lucide-react';
 
 interface ChequePrintModalProps {
@@ -167,23 +170,55 @@ export const ChequePrintModal: React.FC<ChequePrintModalProps> = ({
     }
   };
 
-  // Perform actual print or A4 Calibration Test print
+  const [isExportingPdf, setIsExportingPdf] = useState(false);
+
+  // Perform actual print or A4 Calibration Test print using isolated iframe
   const handleExecutePrint = (testMode: boolean = false) => {
     setIsTestPrint(testMode);
 
-    // Apply print mode class to body for CSS targeting
+    const printZone = document.getElementById('cheque-print-zone');
+    if (printZone) {
+      printChequeElement(printZone, {
+        title: `พิมพ์เช็ค_${activeCheque.chequePayeeName || 'สั่งจ่าย'}`,
+        widthMm: currentTemplate.widthMm,
+        heightMm: currentTemplate.heightMm,
+        feedDirection,
+        isTestSheet: testMode,
+        onComplete: () => {
+          if (!testMode) {
+            const finalReason = isReprint ? (reprintReason === 'อื่น ๆ' ? `อื่น ๆ: ${reprintOtherNote}` : reprintReason) : undefined;
+            StorageService.recordPrintLog({
+              chequeId: activeCheque.id,
+              chequeNumber: chequeNumber.trim() || undefined,
+              bankType: selectedBank,
+              reprintReason: finalReason,
+              reprintNote: reprintOtherNote.trim() || undefined,
+              operator: currentUser,
+            });
+
+            onPrintSuccess(activeCheque.id);
+            if (batchCheques && batchIndex < batchCheques.length - 1) {
+              setBatchIndex(batchIndex + 1);
+            } else {
+              onClose();
+            }
+          }
+        },
+      });
+      return;
+    }
+
+    // Direct window.print fallback
     if (testMode) {
       document.body.classList.add('printing-cheque', 'printing-test-sheet');
     } else {
       document.body.classList.add('printing-cheque');
     }
 
-    // Trigger browser print
     setTimeout(() => {
       window.print();
       document.body.classList.remove('printing-cheque', 'printing-test-sheet');
 
-      // If this was real print (not test), record the log!
       if (!testMode) {
         const finalReason = isReprint ? (reprintReason === 'อื่น ๆ' ? `อื่น ๆ: ${reprintOtherNote}` : reprintReason) : undefined;
         StorageService.recordPrintLog({
@@ -203,6 +238,48 @@ export const ChequePrintModal: React.FC<ChequePrintModalProps> = ({
         }
       }
     }, 150);
+  };
+
+  // Export cheque to 300 DPI vector PDF
+  const handleExportPdf = async (testMode: boolean = false) => {
+    try {
+      setIsExportingPdf(true);
+      await generateChequePdf({
+        template: currentTemplate,
+        cheque: activeCheque,
+        filename: testMode
+          ? `test-sheet-${selectedBank}.pdf`
+          : `cheque-${chequeNumber.trim() || activeCheque.dikaNumber || 'print'}.pdf`,
+        widthMm: currentTemplate.widthMm,
+        heightMm: currentTemplate.heightMm,
+        isTestSheet: testMode,
+        autoDownload: true,
+        printDate,
+        chequeDate: formatChequePrintDate(chequeDate),
+        strikeBearer,
+        crossingType,
+        offsetX,
+        offsetY,
+        feedDirection,
+      });
+
+      if (!testMode) {
+        const finalReason = isReprint ? (reprintReason === 'อื่น ๆ' ? `อื่น ๆ: ${reprintOtherNote}` : reprintReason) : undefined;
+        StorageService.recordPrintLog({
+          chequeId: activeCheque.id,
+          chequeNumber: chequeNumber.trim() || undefined,
+          bankType: selectedBank,
+          reprintReason: finalReason,
+          reprintNote: reprintOtherNote.trim() || undefined,
+          operator: currentUser,
+        });
+        onPrintSuccess(activeCheque.id);
+      }
+    } catch (err) {
+      console.error('PDF export error:', err);
+    } finally {
+      setIsExportingPdf(false);
+    }
   };
 
   // Keyboard Shortcuts (Ctrl+P to print, Esc to close, Arrow keys for batch)
@@ -783,6 +860,7 @@ export const ChequePrintModal: React.FC<ChequePrintModalProps> = ({
                             ? 'rotate(180deg) translate(-100%, -100%)'
                             : 'none',
                           transition: 'transform 0.3s ease',
+                          ['--cheque-font' as any]: currentTemplate.fontFamily || "'Sarabun', 'TH Sarabun New', 'Cordia New', sans-serif",
                         }}
                         className={`bg-white border border-slate-300 shadow-md relative overflow-hidden text-black select-none feed-direction-${feedDirection.toLowerCase().replace('_', '-')}`}
                       >
@@ -998,14 +1076,25 @@ export const ChequePrintModal: React.FC<ChequePrintModalProps> = ({
             })()}
           </div>
 
-          {/* Prompt Guidelines Summary */}
-          <div className="bg-slate-50 p-3.5 rounded-lg border border-slate-200 text-xs text-slate-600 flex items-start gap-2.5">
-            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-            <div>
-              <span className="font-semibold text-slate-800">คำแนะนำการพิมพ์:</span>
-              <p className="mt-0.5">
-                ใส่กระดาษเช็คจริงในทิศทางแนวนอน (Landscape) หากไม่แน่ใจตำแหน่ง สามารถกด <strong>"ทดสอบพิมพ์บนกระดาษ A4"</strong> เพื่อนำกระดาษธรรมดาไปทาบเทียบตำแหน่งกับเช็คจริงก่อนได้ เมื่อพิมพ์จริงระบบจะพิมพ์เฉพาะข้อมูลข้อความลงในช่องที่ถูกต้องโดยไม่พิมพ์ภาพพื้นหลัง
-              </p>
+          {/* Prompt Guidelines Summary with 3 Crucial Browser Print Settings */}
+          <div className="bg-amber-50/80 p-3.5 rounded-xl border border-amber-300 text-xs text-slate-800 space-y-1.5 shadow-xs">
+            <div className="flex items-center gap-2 text-amber-950 font-bold">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+              <span>คำแนะนำการตั้งค่าเครื่องพิมพ์เบราว์เซอร์ เพื่อให้ตำแหน่งและขนาดตรง 100%:</span>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-2 pt-1 text-[11.5px]">
+              <div className="bg-white p-2 rounded-lg border border-amber-200">
+                <span className="font-bold text-red-700">1. ระยะขอบ (Margins):</span>
+                <p className="text-slate-600 mt-0.5">ต้องเลือกเป็น <strong>"ไม่มี" (None)</strong> ห้ามใช้ "เริ่มต้น/Default" เพราะเบราว์เซอร์จะเว้นขอบ 10 มม.</p>
+              </div>
+              <div className="bg-white p-2 rounded-lg border border-amber-200">
+                <span className="font-bold text-red-700">2. มาตราส่วน (Scale):</span>
+                <p className="text-slate-600 mt-0.5">ต้องเลือกเป็น <strong>"กำหนดเอง 100%" (100%)</strong> ห้ามเลือก "พอดีหน้ากระดาษ (Fit to Page)"</p>
+              </div>
+              <div className="bg-white p-2 rounded-lg border border-amber-200">
+                <span className="font-bold text-red-700">3. หัว/ท้ายกระดาษ:</span>
+                <p className="text-slate-600 mt-0.5">ต้อง <strong>"ปิด / ติ๊กถูกออก" (Disable Headers/Footers)</strong> ไม่ให้พิมพ์วันที่และ URL ขอบกระดาษ</p>
+              </div>
             </div>
           </div>
 
@@ -1034,6 +1123,18 @@ export const ChequePrintModal: React.FC<ChequePrintModalProps> = ({
                 <span>📄 พิมพ์ใบสำคัญจ่าย</span>
               </button>
             )}
+
+            {/* PDF Export button (300 DPI Vector) */}
+            <button
+              type="button"
+              disabled={isExportingPdf}
+              onClick={() => handleExportPdf(false)}
+              className="h-12 px-4 text-sm font-bold text-red-900 bg-red-50 hover:bg-red-100 border border-red-300 rounded-xl transition-colors flex items-center gap-2 cursor-pointer shadow-xs disabled:opacity-50"
+              title="ดาวน์โหลดไฟล์ PDF คุณภาพสูง (300 DPI เวกเตอร์) สำหรับเปิดดูหรือสั่งพิมพ์ผ่านโปรแกรมอ่าน PDF"
+            >
+              <Download className="w-4 h-4 text-red-700" />
+              <span>{isExportingPdf ? 'กำลังสร้าง PDF...' : '📄 ส่งออก PDF (300 DPI)'}</span>
+            </button>
 
             {/* Test Print button */}
             <button

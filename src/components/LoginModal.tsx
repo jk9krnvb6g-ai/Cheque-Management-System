@@ -30,10 +30,10 @@ export const LoginModal: React.FC<LoginModalProps> = ({ onLoginSuccess }) => {
   const [mode, setMode] = useState<AuthMode>('LOGIN');
 
   // Sign In State
-  const [loginUsername, setLoginUsername] = useState('somchai');
-  const [loginPassword, setLoginPassword] = useState('1234');
+  const [loginUsername, setLoginUsername] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
   const [showLoginPassword, setShowLoginPassword] = useState(false);
-  const [rememberMe, setRememberMe] = useState(true);
+  const [rememberMe, setRememberMe] = useState(false);
 
   // Register State
   const [regUsername, setRegUsername] = useState('');
@@ -91,31 +91,16 @@ export const LoginModal: React.FC<LoginModalProps> = ({ onLoginSuccess }) => {
     setIsLoading(true);
 
     try {
-      const user = await StorageService.authenticate(loginUsername, loginPassword);
-      if (!user) {
-        setError('ชื่อผู้ใช้งานหรือรหัสผ่านไม่ถูกต้อง หรือบัญชีนี้ถูกระงับการใช้งาน');
+      const res = await StorageService.authenticateDetailed(loginUsername, loginPassword, rememberMe);
+      if (!res.success || !res.user) {
+        setError(res.error || 'ชื่อผู้ใช้งานหรือรหัสผ่านไม่ถูกต้อง');
       } else {
-        onLoginSuccess(user);
+        onLoginSuccess(res.user);
       }
     } catch {
       setError('เกิดข้อผิดพลาดในการเชื่อมต่อระบบ กรุณาลองใหม่อีกครั้ง');
     } finally {
       setIsLoading(false);
-    }
-  };
-
-  // Handle Quick Demo Login
-  const handleQuickLogin = async (u: string, p: string) => {
-    setLoginUsername(u);
-    setLoginPassword(p);
-    setError(null);
-    setIsLoading(true);
-    const user = await StorageService.authenticate(u, p);
-    setIsLoading(false);
-    if (user) {
-      onLoginSuccess(user);
-    } else {
-      setError('ไม่สามารถเข้าสู่ระบบด้วยบัญชีทดสอบนี้ได้');
     }
   };
 
@@ -154,21 +139,31 @@ export const LoginModal: React.FC<LoginModalProps> = ({ onLoginSuccess }) => {
     setIsLoading(true);
 
     try {
-      const result = await StorageService.registerUser({
-        username: cleanUsername,
-        fullName: regFullName.trim(),
-        passwordPlain: regPassword,
-        position: regPosition.trim() || 'เจ้าหน้าที่การเงินและบัญชี',
-        role: regRole,
-      });
+      const result = await StorageService.registerUser(
+        {
+          username: cleanUsername,
+          fullName: regFullName.trim(),
+          passwordPlain: regPassword,
+          position: regPosition.trim() || 'เจ้าหน้าที่การเงินและบัญชี',
+          role: regRole,
+        },
+        {
+          autoLogin: false,
+          status: 'PENDING',
+        }
+      );
 
       if (!result.success || !result.user) {
         setError(result.error || 'การสมัครสมาชิกล้มเหลว');
       } else {
-        setSuccessMsg(`สมัครสมาชิกสำเร็จ! ยินดีต้อนรับคุณ ${result.user.fullName}`);
-        setTimeout(() => {
-          onLoginSuccess(result.user!);
-        }, 700);
+        setSuccessMsg(`ลงทะเบียนสำเร็จเรียบร้อยแล้ว! บัญชีของคุณ "${result.user.username}" อยู่ระหว่าง "รอการอนุมัติสิทธิ์" จากผู้ดูแลระบบ (Admin) เมื่อได้รับการอนุมัติแล้วจะสามารถเข้าสู่ระบบได้ทันที`);
+        setRegUsername('');
+        setRegFullName('');
+        setRegPassword('');
+        setRegConfirmPassword('');
+        setLoginUsername(result.user.username);
+        setLoginPassword('');
+        setMode('LOGIN');
       }
     } catch {
       setError('เกิดข้อผิดพลาดในการสมัครสมาชิก กรุณาลองใหม่อีกครั้ง');
@@ -353,41 +348,6 @@ export const LoginModal: React.FC<LoginModalProps> = ({ onLoginSuccess }) => {
                 <span>{isLoading ? 'กำลังเข้าสู่ระบบ...' : 'เข้าสู่ระบบเพื่อปฏิบัติงาน'}</span>
                 {!isLoading && <ArrowRight className="w-4 h-4" />}
               </button>
-
-              {/* Quick Demo Accounts */}
-              <div className="mt-6 pt-5 border-t border-slate-100">
-                <div className="flex items-center justify-between mb-2.5">
-                  <span className="text-xs font-bold text-slate-600">
-                    เข้าสู่ระบบทดสอบได้ทันที:
-                  </span>
-                  <span className="text-[10px] text-slate-400">คลิกเพื่อเข้าใช้งาน</span>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => handleQuickLogin('somchai', '1234')}
-                    className="text-left p-2.5 rounded-xl bg-slate-50 hover:bg-red-50/70 border border-slate-200/80 hover:border-red-300 text-xs transition-colors cursor-pointer group"
-                  >
-                    <div className="font-extrabold text-slate-900 group-hover:text-red-800 flex items-center justify-between">
-                      <span>สมชาย บริการดี</span>
-                      <span className="text-[10px] px-1.5 py-0.2 bg-slate-200 group-hover:bg-red-200 text-slate-700 rounded font-mono">1234</span>
-                    </div>
-                    <div className="text-[11px] text-slate-500">นักวิชาการเงิน (USER)</div>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => handleQuickLogin('admin', 'admin123')}
-                    className="text-left p-2.5 rounded-xl bg-slate-50 hover:bg-red-50/70 border border-slate-200/80 hover:border-red-300 text-xs transition-colors cursor-pointer group"
-                  >
-                    <div className="font-extrabold text-slate-900 group-hover:text-red-800 flex items-center justify-between">
-                      <span>นายชำนาญ การคลัง</span>
-                      <span className="text-[10px] px-1.5 py-0.2 bg-slate-200 group-hover:bg-red-200 text-slate-700 rounded font-mono">admin123</span>
-                    </div>
-                    <div className="text-[11px] text-slate-500">หัวหน้าฝ่ายการเงิน (ADMIN)</div>
-                  </button>
-                </div>
-              </div>
             </form>
           )}
 

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { BankTemplateConfig, BankType, CrossingType, FeedDirection, User } from '../types';
+import { BankTemplateConfig, BankType, CrossingType, FeedDirection, User, CHEQUE_FONT_OPTIONS } from '../types';
 import { StorageService } from '../utils/storage';
 import { InteractiveChequeCanvas, EditableFieldKey } from './InteractiveChequeCanvas';
 import { AddTemplateModal } from './AddTemplateModal';
@@ -18,6 +18,7 @@ import {
   Upload,
   Eye,
   Users,
+  Type,
 } from 'lucide-react';
 
 interface SettingsViewProps {
@@ -47,9 +48,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     }
   }, [initialBank]);
 
-  // Interactive mouse drag, 1:1 actual size, and enlarged editor states
+  // Interactive mouse drag and 1:1 actual size editor states
   const [selectedField, setSelectedField] = useState<EditableFieldKey | null>('payee');
-  const [isEnlargedEditorOpen, setIsEnlargedEditorOpen] = useState(false);
   const [isCreateTemplateOpen, setIsCreateTemplateOpen] = useState(false);
   const [isActualSizeOpen, setIsActualSizeOpen] = useState(false);
 
@@ -267,6 +267,22 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     onRefreshData();
   };
 
+  const handleUpdateFontFamily = (fontFamilyStr: string) => {
+    const updated: BankTemplateConfig = {
+      ...currentBankConfig,
+      fontFamily: fontFamilyStr,
+    };
+    StorageService.saveTemplate(updated, currentUser);
+    setTemplates({
+      ...templates,
+      [selectedBank]: updated,
+    });
+    const fontObj = CHEQUE_FONT_OPTIONS.find((f) => f.key === fontFamilyStr);
+    setSaveSuccessMsg(`เปลี่ยนแบบอักษรเช็คเป็น "${fontObj?.name || 'ฟอนต์ใหม่'}" สำเร็จแล้ว`);
+    setTimeout(() => setSaveSuccessMsg(null), 3500);
+    onRefreshData();
+  };
+
   const handleToggleFieldEnabled = (field: 'payee2' | 'amountNumber2' | 'amountNumber3', enabled: boolean) => {
     const existing = (currentBankConfig.fields as any)[field] || { x: 100, y: 30, fontSizePt: 11 };
     const updated: BankTemplateConfig = {
@@ -476,11 +492,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
           <button
             type="button"
-            onClick={() => setIsEnlargedEditorOpen(true)}
-            className="px-4 py-2 bg-sky-700 hover:bg-sky-600 text-white rounded-xl text-xs font-bold shadow-xs transition-colors cursor-pointer flex items-center gap-1.5"
+            onClick={() => setIsActualSizeOpen(true)}
+            className="px-4 py-2 bg-red-700 hover:bg-red-800 text-white rounded-xl text-xs font-bold shadow-xs transition-colors cursor-pointer flex items-center gap-1.5"
+            title="เปิดแท่นปรับพิกัดขนาดจริง 100% 1:1 เต็มหน้าจอ สามารถลากตำแหน่งและทาบกระดาษเช็คจริงได้"
           >
             <Maximize2 className="w-4 h-4" />
-            <span>เปิดแท่นปรับแบบเต็มจอ</span>
+            <span>🔍 แท่นปรับขนาดจริง 1:1</span>
           </button>
 
           <button
@@ -497,41 +514,22 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       {/* 1. Large Live Cheque Canvas Workbench */}
       <div className="bg-white border-2 border-slate-200 rounded-2xl p-6 shadow-sm space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-3">
-          <div
-            onClick={() => setIsActualSizeOpen(true)}
-            className="cursor-pointer group"
-            title="คลิกเพื่อเปิดดูป็อปอัปขนาดจริง 100% 1:1 (Actual Physical Scale)"
-          >
-            <h2 className="text-base font-bold text-slate-900 group-hover:text-red-700 transition-colors flex items-center gap-2">
-              <span>จำลองตำแหน่งตัวอย่างแบบเรียลไทม์ ({currentBankConfig.widthMm} × {currentBankConfig.heightMm} มม.):</span>
-              <span className="text-xs px-2.5 py-1 font-bold bg-emerald-50 text-emerald-800 border border-emerald-300 rounded-lg">
-                {currentBankConfig.bankNameThai}
-              </span>
-              <span className="text-xs text-red-600 font-bold group-hover:underline flex items-center gap-1">
-                <Maximize2 className="w-3.5 h-3.5" />
-                <span>คลิกขยับและดูขนาดจริง 1:1</span>
+          <div>
+            <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
+              <span>จำลองตำแหน่งพิมพ์:</span>
+              <span className="text-xs px-2.5 py-0.5 font-bold bg-slate-100 text-slate-700 border border-slate-200 rounded-lg">
+                {currentBankConfig.bankNameThai} ({currentBankConfig.widthMm} × {currentBankConfig.heightMm} มม.)
               </span>
             </h2>
-            <p className="text-xs text-slate-500 mt-1">
-              🖱️ คลิกค้างที่ตัวหนังสือบนเช็คเพื่อลากปรับตำแหน่งได้โดยตรง หรือกดเปิดหน้าต่างขนาดจริง 100% เพื่อขยับทาบกับเช็คกระดาษจริง
+            <p className="text-xs text-slate-500 mt-0.5">
+              คลิกค้างที่กล่องข้อความบนเช็คเพื่อลากขยับตำแหน่งได้ทันที
             </p>
           </div>
 
           <div className="flex items-center gap-2">
-            {/* View Actual 1:1 Size Button */}
-            <button
-              type="button"
-              onClick={() => setIsActualSizeOpen(true)}
-              className="px-4 py-2 bg-red-700 hover:bg-red-800 text-white text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer flex items-center gap-1.5 ring-2 ring-red-300"
-              title="เปิดดูป็อปอัปขนาดจริง 100% 1:1 สามารถขยับตำแหน่งและทาบกระดาษเช็คจริงได้"
-            >
-              <Maximize2 className="w-4 h-4" />
-              <span>🔍 ขยับและดูขนาดจริง 1:1</span>
-            </button>
-
             {/* Upload Scanned Cheque Image Button */}
             <label
-              className="px-4 py-2 bg-white hover:bg-slate-50 text-slate-800 border-2 border-slate-300 text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer flex items-center gap-1.5"
+              className="px-3.5 py-1.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer flex items-center gap-1.5"
               title="ใส่รูปถ่ายหรือภาพสแกนเช็คจริงเป็นพื้นหลังอ้างอิง"
             >
               <Upload className="w-4 h-4 text-red-700" />
@@ -555,7 +553,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           onUpdateFontSize={handleUpdateFontSize}
           isEnlarged={true}
           showCrosshairsDefault={true}
-          onOpenActualSize={() => setIsActualSizeOpen(true)}
           onUploadImage={handleUploadChequeImage}
           onClearImage={handleClearChequeImage}
         />
@@ -1163,6 +1160,55 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         </div>
       </div>
 
+      {/* 2.5. Cheque Typography / Font Family (ฟอนต์ตัวอักษรสำหรับเช็ค) */}
+      <div className="bg-white border-2 border-slate-200 rounded-2xl p-6 shadow-sm space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-3">
+          <div>
+            <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
+              <Type className="w-5 h-5 text-red-600" />
+              <span>แบบอักษรสำหรับพิมพ์เช็ค (Cheque Font Family)</span>
+            </h2>
+            <p className="text-xs text-slate-500 mt-0.5">
+              เลือกฟอนต์ที่จะพิมพ์ลงบนเช็คจริง — ฟอนต์ที่เลือกจะถูกนำไปใช้เหมือนกัน 100% ทั้งในหน้าจอตั้งค่าพิกัด, หน้าจอจำลองขนาดจริง 1:1, หน้าจอตัวอย่างก่อนพิมพ์ และการสั่งพิมพ์จริงบนเครื่องพิมพ์
+            </p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          {CHEQUE_FONT_OPTIONS.map((f) => {
+            const isSelected = (currentBankConfig.fontFamily || "'Sarabun', 'TH Sarabun New', 'Cordia New', sans-serif") === f.key;
+            return (
+              <button
+                key={f.key}
+                type="button"
+                onClick={() => handleUpdateFontFamily(f.key)}
+                className={`p-3.5 rounded-xl border text-left transition-all cursor-pointer ${
+                  isSelected
+                    ? 'bg-red-50 border-red-500 ring-2 ring-red-400 shadow-xs'
+                    : 'bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-800'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-sm text-slate-900">{f.name}</span>
+                  {isSelected && (
+                    <span className="px-2 py-0.5 rounded-full bg-red-700 text-white text-[10px] font-bold">
+                      ใช้งานอยู่
+                    </span>
+                  )}
+                </div>
+                <p className="text-[11px] text-slate-500 mt-1 leading-snug">{f.desc}</p>
+                <div
+                  className="mt-2.5 p-2 bg-white rounded border border-slate-200 text-xs font-bold text-slate-800"
+                  style={{ fontFamily: f.key }}
+                >
+                  ตัวอย่าง: นายสมชาย ใจดี =150,000.00=
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
       {/* 3. Printer Feed Direction & Feeding Guide (ทิศทางการป้อนเช็คเข้าเครื่องพิมพ์) */}
       <div className="bg-white border-2 border-slate-200 rounded-2xl p-6 shadow-sm space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-3">
@@ -1221,110 +1267,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             onRefreshData();
           }}
         />
-      )}
-
-      {/* ENLARGED FULLSCREEN POPUP MODAL FOR DRAG & DROP ADJUSTMENT */}
-      {isEnlargedEditorOpen && (
-        <div className="fixed inset-0 z-50 overflow-hidden bg-slate-950/85 backdrop-blur-md flex flex-col animate-in fade-in duration-200">
-          {/* Header */}
-          <div className="px-5 py-3.5 bg-slate-900 border-b border-slate-800 text-white flex flex-wrap items-center justify-between gap-3 shrink-0">
-            <div className="flex items-center gap-3">
-              <span className="p-2 bg-emerald-600 rounded-xl text-white shadow-xs">
-                <Move className="w-5 h-5" />
-              </span>
-              <div>
-                <div className="flex items-center gap-2">
-                  <h2 className="text-base font-bold text-white">
-                    ปรับตำแหน่งพิกัดและขนาดตัวอักษรด้วยเมาส์ (Full Screen Cheque Editor)
-                  </h2>
-                  <span className="px-2.5 py-0.5 text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 rounded-md">
-                    {currentBankConfig.bankNameThai} ({currentBankConfig.widthMm} × {currentBankConfig.heightMm} มม.)
-                  </span>
-                </div>
-                <p className="text-xs text-slate-400">
-                  🖱️ คลิกค้างที่ตัวหนังสือบนเช็คเพื่อลากปรับตำแหน่ง หรือใช้ปุ่มลูกศรเพื่อปรับละเอียดทีละ 0.5 มม.
-                </p>
-              </div>
-            </div>
-
-            {/* Bank Switch Tabs in Popup */}
-            <div className="flex items-center gap-1.5 bg-slate-800/90 p-1 rounded-xl border border-slate-700">
-              {Object.values(templates).map((tpl) => (
-                <button
-                  key={tpl.bankType}
-                  type="button"
-                  onClick={() => setSelectedBank(tpl.bankType)}
-                  className={`px-3 py-1 text-xs font-bold rounded-lg transition-all cursor-pointer ${
-                    selectedBank === tpl.bankType
-                      ? 'bg-emerald-600 text-white shadow-xs'
-                      : 'text-slate-300 hover:text-white hover:bg-slate-700'
-                  }`}
-                >
-                  {tpl.bankType} ({tpl.bankNameThai})
-                </button>
-              ))}
-            </div>
-
-            {/* Actions: Save, Close */}
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={handleSaveCurrentTemplate}
-                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
-              >
-                <Check className="w-4 h-4" />
-                <span>บันทึกพิกัด {selectedBank}</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setIsEnlargedEditorOpen(false)}
-                className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-xl transition-colors cursor-pointer"
-                title="ปิดหน้าต่างขยาย"
-              >
-                <Minimize2 className="w-5 h-5" />
-              </button>
-            </div>
-          </div>
-
-          {/* Scrollable Center Canvas Area */}
-          <div className="flex-1 overflow-auto p-4 sm:p-8 flex items-center justify-center bg-slate-950/70">
-            <InteractiveChequeCanvas
-              config={currentBankConfig}
-              selectedField={selectedField}
-              onSelectField={setSelectedField}
-              onUpdateFieldPosition={handleUpdateFieldPosition}
-              onUpdateFontSize={handleUpdateFontSize}
-              isEnlarged={true}
-              showCrosshairsDefault={true}
-              onOpenActualSize={() => setIsActualSizeOpen(true)}
-              onUploadImage={handleUploadChequeImage}
-              onClearImage={handleClearChequeImage}
-            />
-          </div>
-
-          {/* Footer info bar */}
-          <div className="px-5 py-3 bg-slate-900 border-t border-slate-800 text-slate-300 text-xs flex flex-wrap items-center justify-between gap-3 shrink-0">
-            <span>💡 <strong>คำแนะนำ:</strong> คลิกค้างที่กล่องข้อความบนเช็คแล้วลากไปยังตำแหน่งที่ต้องการ หรือใช้ปุ่มลูกศรเพื่อปรับทีละ 0.5 มม.</span>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setIsActualSizeOpen(true)}
-                className="px-3.5 py-1.5 bg-red-700 hover:bg-red-800 text-white rounded-lg font-bold shadow-xs cursor-pointer transition-colors flex items-center gap-1.5"
-              >
-                <Maximize2 className="w-3.5 h-3.5" />
-                <span>ดูขนาดจริง 1:1</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setIsEnlargedEditorOpen(false)}
-                className="px-4 py-1.5 bg-slate-800 hover:bg-slate-700 text-white rounded-lg font-bold shadow-xs cursor-pointer transition-colors border border-slate-700"
-              >
-                ปิดหน้าต่างขยาย
-              </button>
-            </div>
-          </div>
-        </div>
       )}
 
       {/* 1:1 ACTUAL PHYSICAL SCALE MODAL POPUP (241 × 90 มม. ขนาดเท่าของจริง 100%) */}

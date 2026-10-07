@@ -82,52 +82,52 @@ export const Navbar: React.FC<NavbarProps> = ({
               ระบบจัดทำและพิมพ์เช็ค
             </span>
             <span className="text-xs text-red-200 font-medium hidden sm:block">
-              โรงพยาบาลและหน่วยงานภาครัฐ (KTB / BAAC / GSB)
+              KTB • BAAC • GSB
             </span>
           </button>
         </div>
 
         {/* Zone 2: Tabs (Admin sees all 4, User sees only write & history) */}
         <nav className="flex flex-wrap items-center gap-1.5 sm:gap-2">
-          {/* Tab 1: Fast Cheque Writer */}
+          {/* Tab 1: Cheque Writer */}
           <button
             type="button"
             onClick={() => onSelectTab('write')}
-            className={`px-4 sm:px-5 py-2.5 text-sm sm:text-base font-extrabold rounded-xl transition-all whitespace-nowrap cursor-pointer flex items-center gap-2 ${
+            className={`px-3.5 sm:px-4 py-2 text-sm sm:text-base font-extrabold rounded-xl transition-all whitespace-nowrap cursor-pointer flex items-center gap-1.5 ${
               currentTab === 'write'
                 ? 'bg-white text-red-800 shadow-md ring-2 ring-red-300'
                 : 'text-white hover:bg-red-700/80 bg-red-900/40 border border-red-700/60'
             }`}
           >
-            <span>✍️ เขียนและสั่งพิมพ์เช็คด่วน</span>
+            <span>✍️ เขียนเช็ค</span>
           </button>
 
-          {/* Tab 2: Executive Dashboard (Admin Only) */}
+          {/* Tab 2: Dashboard (Admin Only) */}
           {isAdmin && (
             <button
               type="button"
               onClick={() => onSelectTab('executive')}
-              className={`px-3.5 sm:px-4 py-2.5 text-sm sm:text-base font-bold rounded-xl transition-all whitespace-nowrap cursor-pointer flex items-center gap-1.5 ${
+              className={`px-3 sm:px-3.5 py-2 text-sm sm:text-base font-bold rounded-xl transition-all whitespace-nowrap cursor-pointer flex items-center gap-1.5 ${
                 currentTab === 'executive'
                   ? 'bg-white text-red-800 shadow-md ring-2 ring-red-300'
                   : 'text-red-100 hover:text-white hover:bg-red-700/80 bg-red-900/30 border border-transparent hover:border-red-700/50'
               }`}
             >
-              <span>📊 แดชบอร์ดผู้บริหาร</span>
+              <span>📊 ภาพรวม</span>
             </button>
           )}
 
-          {/* Tab 3: Cheque History Register */}
+          {/* Tab 3: History */}
           <button
             type="button"
             onClick={() => onSelectTab('history')}
-            className={`px-3.5 sm:px-4 py-2.5 text-sm sm:text-base font-bold rounded-xl transition-all whitespace-nowrap cursor-pointer flex items-center gap-1.5 ${
+            className={`px-3 sm:px-3.5 py-2 text-sm sm:text-base font-bold rounded-xl transition-all whitespace-nowrap cursor-pointer flex items-center gap-1.5 ${
               currentTab === 'history'
                 ? 'bg-white text-red-800 shadow-md ring-2 ring-red-300'
                 : 'text-red-100 hover:text-white hover:bg-red-700/80 bg-red-900/30 border border-transparent hover:border-red-700/50'
             }`}
           >
-            <span>📋 ทะเบียนประวัติเช็ค</span>
+            <span>📋 ทะเบียนเช็ค</span>
             {pendingCount > 0 && (
               <span className={`px-1.5 py-0.2 rounded-full text-xs font-black ${currentTab === 'history' ? 'bg-red-700 text-white' : 'bg-white text-red-800'}`}>
                 {pendingCount}
@@ -135,18 +135,18 @@ export const Navbar: React.FC<NavbarProps> = ({
             )}
           </button>
 
-          {/* Tab 4: Cheque Templates Coordinates (Admin Only) */}
+          {/* Tab 4: Templates (Admin Only) */}
           {isAdmin && (
             <button
               type="button"
               onClick={() => onSelectTab('templates')}
-              className={`px-3.5 sm:px-4 py-2.5 text-sm sm:text-base font-bold rounded-xl transition-all whitespace-nowrap cursor-pointer flex items-center gap-1.5 ${
+              className={`px-3 sm:px-3.5 py-2 text-sm sm:text-base font-bold rounded-xl transition-all whitespace-nowrap cursor-pointer flex items-center gap-1.5 ${
                 currentTab === 'templates'
                   ? 'bg-white text-red-800 shadow-md ring-2 ring-red-300'
                   : 'text-red-100 hover:text-white hover:bg-red-700/80 bg-red-900/30 border border-transparent hover:border-red-700/50'
               }`}
             >
-              <span>⚙️ ตั้งค่าแม่แบบพิมพ์ (Templates)</span>
+              <span>⚙️ ตั้งค่าแม่แบบ</span>
             </button>
           )}
         </nav>

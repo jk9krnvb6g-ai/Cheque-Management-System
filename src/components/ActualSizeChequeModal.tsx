@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { BankTemplateConfig, User } from '../types';
+import { BankTemplateConfig, User, CHEQUE_FONT_OPTIONS } from '../types';
 import { EditableFieldKey } from './InteractiveChequeCanvas';
 import { ChequeBackground } from './ChequeBackground';
 import { StorageService } from '../utils/storage';
@@ -24,6 +24,7 @@ import {
   Crosshair,
   Sparkles,
   Type,
+  AlertCircle,
 } from 'lucide-react';
 
 interface ActualSizeChequeModalProps {
@@ -57,6 +58,8 @@ export const ActualSizeChequeModal: React.FC<ActualSizeChequeModalProps> = ({
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState<boolean>(false);
   const [saveToast, setSaveToast] = useState<string | null>(null);
   const [showFontSizeTable, setShowFontSizeTable] = useState<boolean>(false);
+  const [showHelp, setShowHelp] = useState<boolean>(false);
+  const [showUnsavedConfirm, setShowUnsavedConfirm] = useState<boolean>(false);
 
   // Dragging state
   const [isDragging, setIsDragging] = useState<boolean>(false);
@@ -378,16 +381,45 @@ export const ActualSizeChequeModal: React.FC<ActualSizeChequeModalProps> = ({
   }, [isOpen, selectedField, getFieldCoordinates, getFieldFontSize, updatePosition, updateFontSize]);
 
   // Save current adjusted coordinates
-  const handleSave = () => {
+  const handleSave = (andClose: boolean = false) => {
     if (onSaveConfig) {
       onSaveConfig(liveConfig);
     } else if (currentUser) {
       StorageService.saveTemplate(liveConfig, currentUser);
     }
     setHasUnsavedChanges(false);
-    setSaveToast('บันทึกพิกัดแม่แบบเช็คเรียบร้อยแล้ว!');
-    setTimeout(() => setSaveToast(null), 3000);
+    setShowUnsavedConfirm(false);
+    setSaveToast('✓ บันทึกพิกัดแม่แบบเช็คเรียบร้อยแล้ว!');
+    if (andClose) {
+      setTimeout(() => {
+        onClose();
+      }, 400);
+    } else {
+      setTimeout(() => setSaveToast(null), 3000);
+    }
   };
+
+  // Safe close handler that prompts if unsaved
+  const handleRequestClose = () => {
+    if (hasUnsavedChanges) {
+      setShowUnsavedConfirm(true);
+    } else {
+      onClose();
+    }
+  };
+
+  // Keyboard shortcut: Ctrl + S to save coordinates
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        handleSave(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, liveConfig, onSaveConfig, currentUser]);
 
   // Revert back to original config
   const handleResetToConfig = () => {
@@ -406,15 +438,14 @@ export const ActualSizeChequeModal: React.FC<ActualSizeChequeModalProps> = ({
   const currentSelectedCoords = getFieldCoordinates(selectedField);
 
   const fieldOptions: { key: EditableFieldKey; label: string; icon: string }[] = [
-    { key: 'payee', label: 'ผู้รับเงิน (จุด 1)', icon: '👤' },
-    { key: 'payee2', label: 'ผู้รับเงิน (จุด 2)', icon: '👤' },
-    { key: 'amountNumber', label: 'ตัวเลข (จุด 1)', icon: '🔢' },
-    { key: 'amountNumber2', label: 'ตัวเลข (จุด 2)', icon: '🔢' },
-    { key: 'amountNumber3', label: 'ตัวเลข (จุด 3)', icon: '🔢' },
-    { key: 'amountText', label: 'จำนวนเงินอักษร', icon: '🔤' },
-    { key: 'date', label: 'วันที่ (ค่าเดิมไม่พิมพ์)', icon: '📅' },
-    { key: 'crossing', label: 'ขีดคร่อม (Crossing)', icon: '💳' },
-    { key: 'strikeBearer', label: 'ขีดฆ่าหรือผู้ถือ', icon: '✂️' },
+    { key: 'payee', label: 'ผู้รับเงิน', icon: '👤' },
+    { key: 'amountText', label: 'ตัวอักษร', icon: '🔤' },
+    { key: 'amountNumber', label: 'ตัวเลข', icon: '🔢' },
+    { key: 'date', label: 'วันที่', icon: '📅' },
+    { key: 'crossing', label: 'ขีดคร่อม', icon: '💳' },
+    { key: 'strikeBearer', label: 'ขีดฆ่าผู้ถือ', icon: '✂️' },
+    { key: 'payee2', label: 'ผู้รับเงิน (ต้นขั้ว)', icon: '👤' },
+    { key: 'amountNumber2', label: 'ตัวเลข (ต้นขั้ว)', icon: '🔢' },
   ];
 
   // Floating Interactive Badge on Canvas for Selected Field
@@ -428,19 +459,19 @@ export const ActualSizeChequeModal: React.FC<ActualSizeChequeModalProps> = ({
       <div
         onMouseDown={(e) => e.stopPropagation()}
         onTouchStart={(e) => e.stopPropagation()}
-        className="absolute -top-7 left-0 px-2 py-0.5 bg-slate-900/95 text-white text-[9px] font-mono rounded-md font-bold shadow-xl whitespace-nowrap z-50 flex items-center gap-1.5 border border-amber-400 ring-2 ring-red-500/40 select-none pointer-events-auto"
+        className="absolute -top-6.5 left-0 px-1.5 py-0.5 bg-slate-900/90 text-white text-[9px] font-mono rounded font-bold shadow-md whitespace-nowrap z-50 flex items-center gap-1 border border-amber-400 select-none pointer-events-auto"
       >
         <span className="text-slate-200">X:{coords.x} Y:{coords.y}</span>
         {!isSpecial && (
           <>
-            <span className="text-amber-300 font-black">| 🔤 {size}pt</span>
+            <span className="text-amber-300 font-bold ml-0.5">{size}pt</span>
             <button
               type="button"
               onClick={(e) => {
                 e.stopPropagation();
                 updateFontSize(fieldKey, size - 0.5);
               }}
-              className="w-4 h-4 bg-slate-800 hover:bg-red-700 text-white rounded flex items-center justify-center font-bold text-[10px] cursor-pointer transition-colors active:scale-90"
+              className="w-3.5 h-3.5 bg-slate-800 hover:bg-red-700 text-white rounded flex items-center justify-center font-bold text-[9px] cursor-pointer"
               title="ลดขนาดฟอนต์ 0.5 pt"
             >
               -
@@ -451,7 +482,7 @@ export const ActualSizeChequeModal: React.FC<ActualSizeChequeModalProps> = ({
                 e.stopPropagation();
                 updateFontSize(fieldKey, size + 0.5);
               }}
-              className="w-4 h-4 bg-slate-800 hover:bg-emerald-600 text-white rounded flex items-center justify-center font-bold text-white text-[10px] cursor-pointer transition-colors active:scale-90"
+              className="w-3.5 h-3.5 bg-slate-800 hover:bg-emerald-600 text-white rounded flex items-center justify-center font-bold text-white text-[9px] cursor-pointer"
               title="เพิ่มขนาดฟอนต์ 0.5 pt"
             >
               +
@@ -465,39 +496,30 @@ export const ActualSizeChequeModal: React.FC<ActualSizeChequeModalProps> = ({
   return (
     <div className="fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-md flex flex-col overflow-hidden animate-in fade-in duration-200 font-sans">
       
-      {/* Top Header Bar */}
-      <div className="px-5 py-3 bg-slate-900 border-b border-slate-800 text-white flex flex-wrap items-center justify-between gap-3 shrink-0">
-        <div className="flex items-center gap-3">
-          <div className="p-2 bg-red-700 text-white rounded-xl shadow-xs shrink-0">
-            <Maximize2 className="w-5 h-5" />
+      {/* Top Header Bar (Clean & Compact) */}
+      <div className="px-5 py-2.5 bg-slate-900 border-b border-slate-800 text-white flex flex-wrap items-center justify-between gap-3 shrink-0">
+        <div className="flex items-center gap-2.5">
+          <div className="p-1.5 bg-red-700 text-white rounded-lg shadow-xs shrink-0">
+            <Maximize2 className="w-4 h-4" />
           </div>
-          <div>
-            <div className="flex flex-wrap items-center gap-2">
-              <h2 className="text-base sm:text-lg font-black tracking-tight text-white flex items-center gap-2">
-                <span>จำลองเช็คขนาดจริง 100% (1:1 Physical Scale)</span>
-              </h2>
-              <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                {liveConfig.bankNameThai} ({widthMm} × {heightMm} มม. / {widthCm} × {heightCm} ซม.)
-              </span>
-              <span className="px-2 py-0.5 rounded-md text-[11px] font-bold bg-red-500/20 text-red-300 border border-red-500/30 flex items-center gap-1">
-                <Move className="w-3 h-3" />
-                <span>คลิกและลากขยับตำแหน่งได้ทันที</span>
-              </span>
-            </div>
-            <p className="text-xs text-slate-400 mt-0.5">
-              📐 สเกล 1:1 เทียบเท่าเช็คกระดาษจริง นำเช็คมาทาบหน้าจอ หรือคลิกลากขยับตัวหนังสือแล้วกดบันทึกพิกัดได้เลย
-            </p>
+          <div className="flex items-center gap-2">
+            <h2 className="text-sm sm:text-base font-black tracking-tight text-white">
+              ตั้งค่าตำแหน่งเช็ค (1:1)
+            </h2>
+            <span className="px-2 py-0.5 rounded-md text-[11px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+              {liveConfig.bankNameThai} ({widthMm} × {heightMm} มม.)
+            </span>
           </div>
         </div>
 
         {/* Action Controls in Header */}
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex items-center gap-2">
           {/* Zoom controls */}
-          <div className="flex items-center gap-1 bg-slate-800 border border-slate-700 rounded-xl p-1 text-xs">
+          <div className="flex items-center gap-1 bg-slate-800 border border-slate-700 rounded-lg p-0.5 text-xs">
             <button
               type="button"
               onClick={() => setZoom((z) => Math.max(0.5, Math.round((z - 0.1) * 10) / 10))}
-              className="p-1.5 text-slate-300 hover:text-white hover:bg-slate-700 rounded-lg cursor-pointer"
+              className="p-1 text-slate-300 hover:text-white hover:bg-slate-700 rounded cursor-pointer"
               title="ย่อขนาด"
             >
               <ZoomOut className="w-3.5 h-3.5" />
@@ -505,17 +527,17 @@ export const ActualSizeChequeModal: React.FC<ActualSizeChequeModalProps> = ({
             <button
               type="button"
               onClick={() => setZoom(1.0)}
-              className={`px-2 py-1 font-mono font-bold rounded-lg cursor-pointer ${
+              className={`px-1.5 py-0.5 font-mono font-bold rounded text-[11px] cursor-pointer ${
                 zoom === 1.0 ? 'bg-red-700 text-white' : 'text-slate-300 hover:text-white'
               }`}
               title="กลับสู่สเกลจริง 100% 1:1"
             >
-              {Math.round(zoom * 100)}% {zoom === 1.0 ? '(ขนาดจริง)' : ''}
+              {Math.round(zoom * 100)}%
             </button>
             <button
               type="button"
               onClick={() => setZoom((z) => Math.min(2.0, Math.round((z + 0.1) * 10) / 10))}
-              className="p-1.5 text-slate-300 hover:text-white hover:bg-slate-700 rounded-lg cursor-pointer"
+              className="p-1 text-slate-300 hover:text-white hover:bg-slate-700 rounded cursor-pointer"
               title="ขยายขนาด"
             >
               <ZoomIn className="w-3.5 h-3.5" />
@@ -526,14 +548,15 @@ export const ActualSizeChequeModal: React.FC<ActualSizeChequeModalProps> = ({
           <button
             type="button"
             onClick={() => setShowBgImage(!showBgImage)}
-            className={`px-3 py-1.5 rounded-xl border text-xs font-semibold cursor-pointer transition-colors flex items-center gap-1.5 ${
+            className={`px-2.5 py-1 rounded-lg border text-xs font-semibold cursor-pointer transition-colors flex items-center gap-1 ${
               showBgImage
                 ? 'bg-sky-600 text-white border-sky-500'
                 : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'
             }`}
+            title="แสดงหรือซ่อนรูปภาพเช็คจริง"
           >
             <Eye className="w-3.5 h-3.5" />
-            <span>{showBgImage ? 'แสดงรูปเช็ค' : 'ซ่อนรูปเช็ค'}</span>
+            <span>{showBgImage ? 'รูปเช็ค' : 'ซ่อนรูป'}</span>
           </button>
 
           {/* Revert button if changed */}
@@ -541,7 +564,7 @@ export const ActualSizeChequeModal: React.FC<ActualSizeChequeModalProps> = ({
             <button
               type="button"
               onClick={handleResetToConfig}
-              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 rounded-xl text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
+              className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
               title="ยกเลิกการขยับและคืนค่าเดิม"
             >
               <RotateCcw className="w-3.5 h-3.5" />
@@ -549,228 +572,198 @@ export const ActualSizeChequeModal: React.FC<ActualSizeChequeModalProps> = ({
             </button>
           )}
 
-          {/* Save Coordinates Button */}
-          <button
-            type="button"
-            onClick={handleSave}
-            className={`px-4 py-2 rounded-xl text-xs font-black transition-all shadow-md flex items-center gap-1.5 cursor-pointer ring-2 ${
-              hasUnsavedChanges
-                ? 'bg-emerald-600 hover:bg-emerald-700 text-white ring-emerald-400 animate-pulse'
-                : 'bg-red-700 hover:bg-red-800 text-white ring-red-400/80'
-            }`}
-          >
-            <Save className="w-4 h-4" />
-            <span>💾 บันทึกพิกัด {hasUnsavedChanges ? '(มีพิกัดใหม่)' : ''}</span>
-          </button>
-
           {/* Print Test button */}
           <button
             type="button"
             onClick={handlePrintTest}
-            className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
+            className="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
             title="พิมพ์ลงกระดาษจริงเพื่อทาบตำแหน่ง"
           >
-            <Printer className="w-4 h-4" />
-            <span>พิมพ์ทดสอบ</span>
+            <Printer className="w-3.5 h-3.5" />
+            <span>ทดสอบพิมพ์</span>
+          </button>
+
+          {/* Save Coordinates Button */}
+          <button
+            type="button"
+            onClick={() => handleSave(false)}
+            className={`px-3.5 py-1.5 rounded-lg text-xs font-black transition-all shadow-sm flex items-center gap-1.5 cursor-pointer ring-1 ${
+              hasUnsavedChanges
+                ? 'bg-emerald-600 hover:bg-emerald-500 text-white ring-emerald-300 animate-pulse shadow-md shadow-emerald-900/50'
+                : 'bg-emerald-700 hover:bg-emerald-600 text-white ring-emerald-500/80'
+            }`}
+            title="บันทึกพิกัด (Ctrl+S)"
+          >
+            <Save className="w-3.5 h-3.5" />
+            <span>💾 บันทึกพิกัด</span>
+            <span className="hidden sm:inline-block px-1.5 py-0.2 rounded bg-emerald-950/40 text-emerald-100 text-[10px] font-mono">
+              Ctrl+S
+            </span>
           </button>
 
           {/* Close button */}
           <button
             type="button"
-            onClick={onClose}
-            className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-xl transition-colors cursor-pointer"
+            onClick={handleRequestClose}
+            className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
             title="ปิดหน้าต่าง"
           >
-            <X className="w-6 h-6" />
+            <X className="w-5 h-5" />
           </button>
         </div>
       </div>
 
       {/* Floating Save Toast */}
       {saveToast && (
-        <div className="absolute top-18 right-8 z-50 p-3 bg-emerald-600 text-white text-xs font-bold rounded-2xl shadow-xl flex items-center gap-2 animate-in fade-in">
+        <div className="absolute top-14 right-6 z-50 p-2.5 bg-emerald-600 text-white text-xs font-bold rounded-xl shadow-xl flex items-center gap-2 animate-in fade-in">
           <CheckCircle2 className="w-4 h-4" />
           <span>{saveToast}</span>
         </div>
       )}
 
-      {/* Sub-bar: Field Selector Pills & Precision Nudge Controls */}
-      <div className="px-5 py-2.5 bg-slate-850 border-b border-slate-800 flex flex-wrap items-center justify-between gap-3 text-xs shrink-0">
-        <div className="flex flex-wrap items-center gap-1.5">
-          <span className="text-slate-400 font-bold mr-1 flex items-center gap-1">
-            <Sliders className="w-3.5 h-3.5 text-red-400" />
-            <span>เลือกข้อความที่จะขยับ:</span>
-          </span>
+      {/* Single Unified Toolbar: Field Pills + Precision Controls */}
+      <div className="px-5 py-2 bg-slate-850 border-b border-slate-800 flex flex-wrap items-center justify-between gap-3 text-xs shrink-0">
+        {/* Field Selector Pills (Clean & Compact) */}
+        <div className="flex items-center gap-1 overflow-x-auto py-0.5 max-w-full scrollbar-none">
           {fieldOptions.map((f) => {
             const isSelected = selectedField === f.key;
-            const coords = getFieldCoordinates(f.key);
             return (
               <button
                 key={f.key}
                 type="button"
                 onClick={() => setSelectedField(f.key)}
-                className={`px-2.5 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1 border ${
+                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 whitespace-nowrap ${
                   isSelected
-                    ? 'bg-red-700 text-white border-red-500 shadow-xs'
-                    : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'
+                    ? 'bg-red-700 text-white shadow-xs ring-1 ring-red-400'
+                    : 'bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-white'
                 }`}
               >
                 <span>{f.icon}</span>
                 <span>{f.label}</span>
-                <span className={`text-[10px] font-mono ml-0.5 opacity-80 ${isSelected ? 'text-red-100' : 'text-slate-400'}`}>
-                  ({coords.x}, {coords.y})
-                </span>
               </button>
             );
           })}
         </div>
 
-        {/* Nudge Controls for Selected Field */}
-        <div className="flex items-center gap-2 bg-slate-800 border border-slate-700 px-3 py-1 rounded-xl">
-          <span className="text-slate-300 font-bold">
-            พิกัด <strong className="text-red-400">{fieldOptions.find((f) => f.key === selectedField)?.label}</strong>:
-          </span>
-          <span className="text-amber-300 font-mono font-extrabold text-xs">
-            X: {currentSelectedCoords.x} mm, Y: {currentSelectedCoords.y} mm
-          </span>
+        {/* Precision Nudge & Font Controls */}
+        <div className="flex items-center gap-2.5 flex-wrap">
+          {/* Coordinates Adjuster */}
+          <div className="flex items-center gap-1.5 bg-slate-800 border border-slate-700 px-2.5 py-1 rounded-lg text-xs">
+            <span className="text-slate-400 font-bold">X:</span>
+            <span className="font-mono font-bold text-amber-300 w-9 text-center">{currentSelectedCoords.x}</span>
+            <span className="text-slate-400 font-bold ml-1">Y:</span>
+            <span className="font-mono font-bold text-amber-300 w-9 text-center">{currentSelectedCoords.y}</span>
 
-          <div className="flex items-center gap-1 ml-2 border-l border-slate-700 pl-2">
-            {/* Left */}
-            <button
-              type="button"
-              onClick={() => updatePosition(selectedField, currentSelectedCoords.x - 0.5, currentSelectedCoords.y)}
-              className="p-1 hover:bg-slate-700 rounded text-slate-300 hover:text-white cursor-pointer"
-              title="เลื่อนซ้าย 0.5 มม."
-            >
-              <ChevronLeft className="w-4 h-4" />
-            </button>
-            {/* Right */}
-            <button
-              type="button"
-              onClick={() => updatePosition(selectedField, currentSelectedCoords.x + 0.5, currentSelectedCoords.y)}
-              className="p-1 hover:bg-slate-700 rounded text-slate-300 hover:text-white cursor-pointer"
-              title="เลื่อนขวา 0.5 มม."
-            >
-              <ChevronRight className="w-4 h-4" />
-            </button>
-            {/* Up */}
-            <button
-              type="button"
-              onClick={() => updatePosition(selectedField, currentSelectedCoords.x, currentSelectedCoords.y - 0.5)}
-              className="p-1 hover:bg-slate-700 rounded text-slate-300 hover:text-white cursor-pointer"
-              title="เลื่อนขึ้น 0.5 มม."
-            >
-              <ChevronUp className="w-4 h-4" />
-            </button>
-            {/* Down */}
-            <button
-              type="button"
-              onClick={() => updatePosition(selectedField, currentSelectedCoords.x, currentSelectedCoords.y + 0.5)}
-              className="p-1 hover:bg-slate-700 rounded text-slate-300 hover:text-white cursor-pointer"
-              title="เลื่อนลง 0.5 มม."
-            >
-              <ChevronDown className="w-4 h-4" />
-            </button>
+            <div className="flex items-center gap-0.5 ml-1 border-l border-slate-700 pl-1.5">
+              <button
+                type="button"
+                onClick={() => updatePosition(selectedField, currentSelectedCoords.x - 0.5, currentSelectedCoords.y)}
+                className="p-1 hover:bg-slate-700 rounded text-slate-300 hover:text-white cursor-pointer"
+                title="เลื่อนซ้าย 0.5 มม."
+              >
+                <ChevronLeft className="w-3.5 h-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => updatePosition(selectedField, currentSelectedCoords.x + 0.5, currentSelectedCoords.y)}
+                className="p-1 hover:bg-slate-700 rounded text-slate-300 hover:text-white cursor-pointer"
+                title="เลื่อนขวา 0.5 มม."
+              >
+                <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => updatePosition(selectedField, currentSelectedCoords.x, currentSelectedCoords.y - 0.5)}
+                className="p-1 hover:bg-slate-700 rounded text-slate-300 hover:text-white cursor-pointer"
+                title="เลื่อนขึ้น 0.5 มม."
+              >
+                <ChevronUp className="w-3.5 h-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => updatePosition(selectedField, currentSelectedCoords.x, currentSelectedCoords.y + 0.5)}
+                className="p-1 hover:bg-slate-700 rounded text-slate-300 hover:text-white cursor-pointer"
+                title="เลื่อนลง 0.5 มม."
+              >
+                <ChevronDown className="w-3.5 h-3.5" />
+              </button>
+            </div>
           </div>
-          <span className="text-[10px] text-slate-400 hidden xl:inline">(หรือกดปุ่มลูกศรบนคีย์บอร์ด)</span>
-        </div>
 
-        {/* Font Size Controls for Selected Field & All-Fields Tools */}
-        <div className="flex flex-wrap items-center gap-2">
+          {/* Font Size Adjuster */}
           {selectedField !== 'crossing' && selectedField !== 'strikeBearer' && (
-            <div className="flex items-center gap-2 bg-slate-800 border border-slate-700 px-3 py-1 rounded-xl">
-              <span className="text-slate-300 font-bold flex items-center gap-1">
-                <span>🔤 ขนาด Font <strong className="text-amber-400">({fieldOptions.find((f) => f.key === selectedField)?.label.split(' ')[0]})</strong>:</span>
+            <div className="flex items-center gap-1.5 bg-slate-800 border border-slate-700 px-2 py-1 rounded-lg text-xs">
+              <span className="text-slate-400 font-bold">ขนาด:</span>
+              <button
+                type="button"
+                onClick={() => updateFontSize(selectedField, getFieldFontSize(selectedField) - 0.5)}
+                className="w-5 h-5 flex items-center justify-center bg-slate-700 hover:bg-slate-600 rounded text-slate-200 font-bold cursor-pointer"
+                title="ลดขนาดฟอนต์ 0.5 pt"
+              >
+                -
+              </button>
+              <span className="font-mono font-bold text-amber-300 w-11 text-center">
+                {getFieldFontSize(selectedField)} pt
               </span>
-              <div className="flex items-center gap-1">
-                <button
-                  type="button"
-                  onClick={() => updateFontSize(selectedField, getFieldFontSize(selectedField) - 0.5)}
-                  className="w-6 h-6 flex items-center justify-center bg-slate-700 hover:bg-slate-600 rounded text-slate-200 hover:text-white font-bold text-xs cursor-pointer active:scale-95"
-                  title="ลดขนาดฟอนต์ 0.5 pt (หรือกด - บนคีย์บอร์ด)"
-                >
-                  -
-                </button>
-                <div className="flex items-center">
-                  <input
-                    type="number"
-                    step="0.5"
-                    min="6"
-                    max="28"
-                    value={getFieldFontSize(selectedField)}
-                    onChange={(e) => updateFontSize(selectedField, parseFloat(e.target.value) || 12)}
-                    className="w-13 text-center bg-slate-900 border border-slate-700 rounded px-1 py-0.5 text-xs font-mono font-bold text-amber-300 focus:outline-none focus:border-red-500"
-                  />
-                  <span className="text-slate-400 text-[10px] ml-1">pt</span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => updateFontSize(selectedField, getFieldFontSize(selectedField) + 0.5)}
-                  className="w-6 h-6 flex items-center justify-center bg-slate-700 hover:bg-slate-600 rounded text-slate-200 hover:text-white font-bold text-xs cursor-pointer active:scale-95"
-                  title="เพิ่มขนาดฟอนต์ 0.5 pt (หรือกด + บนคีย์บอร์ด)"
-                >
-                  +
-                </button>
-              </div>
-
-              {/* Quick preset buttons */}
-              <div className="hidden sm:flex items-center gap-1 border-l border-slate-700 pl-2">
-                {[8, 9, 10, 11, 12, 13, 14, 16, 18].map((pt) => (
-                  <button
-                    key={pt}
-                    type="button"
-                    onClick={() => updateFontSize(selectedField, pt)}
-                    className={`px-1.5 py-0.5 rounded text-[10px] font-mono cursor-pointer transition-colors ${
-                      getFieldFontSize(selectedField) === pt
-                        ? 'bg-red-700 text-white font-bold'
-                        : 'bg-slate-700/60 text-slate-400 hover:text-white hover:bg-slate-700'
-                    }`}
-                    title={`ตั้งขนาด ${pt} pt`}
-                  >
-                    {pt}
-                  </button>
-                ))}
-              </div>
+              <button
+                type="button"
+                onClick={() => updateFontSize(selectedField, getFieldFontSize(selectedField) + 0.5)}
+                className="w-5 h-5 flex items-center justify-center bg-slate-700 hover:bg-slate-600 rounded text-slate-200 font-bold cursor-pointer"
+                title="เพิ่มขนาดฟอนต์ 0.5 pt"
+              >
+                +
+              </button>
             </div>
           )}
 
-          {/* Batch Scale All Fonts Tool */}
-          <div className="flex items-center gap-1 bg-slate-800 border border-slate-700 px-2 py-1 rounded-xl">
-            <span className="text-slate-400 font-bold text-[11px] mr-1 hidden md:inline">
-              ปรับทุกช่อง:
-            </span>
-            <button
-              type="button"
-              onClick={() => scaleAllFonts(-0.5)}
-              className="px-2 py-0.5 bg-slate-700 hover:bg-slate-600 text-slate-200 hover:text-white text-[10.5px] font-bold rounded cursor-pointer transition-colors"
-              title="ลดขนาดตัวอักษรทุกช่องพร้อมกัน 0.5 pt"
-            >
-              - 0.5pt ทุกช่อง
-            </button>
-            <button
-              type="button"
-              onClick={() => scaleAllFonts(0.5)}
-              className="px-2 py-0.5 bg-slate-700 hover:bg-slate-600 text-slate-200 hover:text-white text-[10.5px] font-bold rounded cursor-pointer transition-colors"
-              title="เพิ่มขนาดตัวอักษรทุกช่องพร้อมกัน 0.5 pt"
-            >
-              + 0.5pt ทุกช่อง
-            </button>
-          </div>
-
-          {/* Toggle All Font Sizes Table Drawer */}
-          <button
-            type="button"
-            onClick={() => setShowFontSizeTable(!showFontSizeTable)}
-            className={`px-2.5 py-1 rounded-xl border text-[11px] font-bold cursor-pointer transition-colors flex items-center gap-1.5 ${
-              showFontSizeTable
-                ? 'bg-amber-500 text-slate-950 border-amber-400 shadow-md font-black'
-                : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'
-            }`}
-            title="เปิดตารางดูและปรับขนาด Font ทุกตำแหน่งพร้อมกัน"
+          {/* Cheque Font Family Selector */}
+          <select
+            value={liveConfig.fontFamily || "'Sarabun', 'TH Sarabun New', 'Cordia New', sans-serif"}
+            onChange={(e) => {
+              setLiveConfig({
+                ...liveConfig,
+                fontFamily: e.target.value,
+              });
+            }}
+            className="bg-slate-800 border border-slate-700 rounded-lg px-2 py-1 text-xs text-amber-300 font-bold focus:outline-none cursor-pointer"
+            title="เลือกฟอนต์พิมพ์เช็ค"
           >
-            <Type className="w-3.5 h-3.5" />
-            <span>ตารางขนาดฟอนต์</span>
-          </button>
+            {CHEQUE_FONT_OPTIONS.map((f) => (
+              <option key={f.key} value={f.key} className="bg-slate-900 text-white">
+                {f.name}
+              </option>
+            ))}
+          </select>
+
+          {/* Help Tooltip Icon (No more giant banner) */}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setShowHelp(!showHelp)}
+              className={`p-1.5 rounded-lg border text-xs font-bold transition-colors cursor-pointer ${
+                showHelp
+                  ? 'bg-amber-500 text-slate-950 border-amber-400'
+                  : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-white'
+              }`}
+              title="วิธีใช้งานและคีย์ลัด"
+            >
+              <Info className="w-3.5 h-3.5" />
+            </button>
+            {showHelp && (
+              <div className="absolute right-0 top-8 z-50 bg-slate-900/95 border border-slate-700 text-slate-200 text-xs rounded-xl p-3 shadow-2xl w-68 animate-in fade-in backdrop-blur-md">
+                <div className="font-bold text-amber-400 mb-1 flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>วิธีขยับและคีย์ลัด</span>
+                </div>
+                <ul className="space-y-1 text-[11px] text-slate-300">
+                  <li>• <strong>ลากเมาส์:</strong> ขยับข้อความตามใจชอบ</li>
+                  <li>• <strong>ปุ่มลูกศร (↑ ↓ ← →):</strong> ขยับทีละ 0.5 มม.</li>
+                  <li>• <strong>ปุ่ม + / - :</strong> ปรับขนาดตัวอักษร 0.5 pt</li>
+                  <li>• <strong>ปุ่ม "บันทึกพิกัด":</strong> เพื่อนำไปใช้พิมพ์จริง</li>
+                </ul>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -906,14 +899,6 @@ export const ActualSizeChequeModal: React.FC<ActualSizeChequeModalProps> = ({
           </div>
         )}
 
-        {/* Instruction pill */}
-        <div className="mb-3 flex items-center gap-2 text-xs text-amber-300 bg-amber-950/60 border border-amber-800/60 px-3.5 py-1.5 rounded-xl shadow-xs">
-          <Info className="w-4 h-4 shrink-0 text-amber-400" />
-          <span>
-            💡 <strong>วิธีขยับและปรับขนาด:</strong> คลิกที่ตัวหนังสือเพื่อลากเมาส์ขยับตำแหน่ง · ปรับขนาด Font ได้จากแถบด้านบนหรือกด <strong>+ / -</strong> บนคีย์บอร์ด · กด <strong>"💾 บันทึกพิกัด"</strong> เพื่อนำไปใช้พิมพ์จริง
-          </span>
-        </div>
-
         {/* Cheque Wrapper with Scaled Transform */}
         <div
           style={{
@@ -956,6 +941,7 @@ export const ActualSizeChequeModal: React.FC<ActualSizeChequeModalProps> = ({
               style={{
                 width: `${widthMm}mm`,
                 height: `${heightMm}mm`,
+                ['--cheque-font' as any]: liveConfig.fontFamily || "'Sarabun', 'TH Sarabun New', 'Cordia New', sans-serif",
               }}
               className="bg-white border-2 border-slate-500 relative overflow-hidden text-black select-none shadow-xl cursor-crosshair"
             >
@@ -1010,19 +996,14 @@ export const ActualSizeChequeModal: React.FC<ActualSizeChequeModalProps> = ({
                   fontSize: `${liveConfig.fields.date.fontSizePt}pt`,
                   letterSpacing: `${liveConfig.fields.date.letterSpacingMm || 2.2}mm`,
                 }}
-                className={`absolute whitespace-nowrap font-bold text-slate-900 leading-none z-20 cursor-move p-1 rounded-sm transition-shadow ${
+                className={`cheque-field-text absolute whitespace-nowrap font-bold text-slate-900 leading-none z-20 cursor-move rounded-xs transition-shadow ${
                   selectedField === 'date'
                     ? 'ring-2 ring-red-600 bg-red-100/70 text-red-950 shadow-md'
                     : 'hover:ring-1 hover:ring-red-400/80 hover:bg-red-50/50'
                 } ${liveConfig.hideDateDefault || liveConfig.fields.date.enabled === false ? 'opacity-40 line-through decoration-red-500' : ''}`}
-                title="ลากเพื่อย้ายพิกัดวันที่ (Date) [ปกติถูกตั้งไม่ให้พิมพ์ตามคำสั่ง]"
+                title="ลากเพื่อย้ายพิกัดวันที่ (Date)"
               >
                 02  10  2569
-                {liveConfig.hideDateDefault && (
-                  <span className="ml-1 text-[8px] font-sans no-underline text-red-600 font-bold bg-white/90 px-1 rounded">
-                    (ซ่อนไม่พิมพ์)
-                  </span>
-                )}
                 {renderFieldBadge('date')}
               </div>
 
@@ -1041,19 +1022,19 @@ export const ActualSizeChequeModal: React.FC<ActualSizeChequeModalProps> = ({
                   top: `${liveConfig.fields.payee.y + (liveConfig.globalOffsetY || 0)}mm`,
                   fontSize: `${liveConfig.fields.payee.fontSizePt}pt`,
                 }}
-                className={`absolute whitespace-nowrap font-bold text-slate-900 leading-none z-20 cursor-move p-1 rounded-sm transition-shadow ${
+                className={`cheque-field-text absolute whitespace-nowrap font-bold text-slate-900 leading-none z-20 cursor-move rounded-xs transition-shadow ${
                   selectedField === 'payee'
                     ? 'ring-2 ring-red-600 bg-red-100/70 text-red-950 shadow-md'
                     : 'hover:ring-1 hover:ring-red-400/80 hover:bg-red-50/50'
                 }`}
-                title="ลากเพื่อย้ายพิกัดชื่อผู้รับเงิน จุดที่ 1 (Payee 1)"
+                title="ลากเพื่อย้ายพิกัดชื่อผู้รับเงิน"
               >
-                บริษัท ตัวอย่างเจริญพาณิชย์ จำกัด (จุด 1)
+                บริษัท ตัวอย่างเจริญพาณิชย์ จำกัด
                 {renderFieldBadge('payee')}
               </div>
 
               {/* ========================================================= */}
-              {/* 2.1. Payee Field 2 (Draggable - จุดที่ 2 ปรับแยกกันได้) */}
+              {/* 2.1. Payee Field 2 (Draggable - ต้นขั้ว) */}
               {/* ========================================================= */}
               {liveConfig.fields.payee2 && (
                 <div
@@ -1068,14 +1049,14 @@ export const ActualSizeChequeModal: React.FC<ActualSizeChequeModalProps> = ({
                     top: `${liveConfig.fields.payee2.y + (liveConfig.globalOffsetY || 0)}mm`,
                     fontSize: `${liveConfig.fields.payee2.fontSizePt}pt`,
                   }}
-                  className={`absolute whitespace-nowrap font-bold text-slate-900 leading-none z-20 cursor-move p-1 rounded-sm transition-shadow ${
+                  className={`cheque-field-text absolute whitespace-nowrap font-bold text-slate-900 leading-none z-20 cursor-move rounded-xs transition-shadow ${
                     selectedField === 'payee2'
                       ? 'ring-2 ring-blue-600 bg-blue-100/70 text-blue-950 shadow-md'
                       : 'hover:ring-1 hover:ring-blue-400/80 hover:bg-blue-50/50'
                   }`}
-                  title="ลากเพื่อย้ายพิกัดชื่อผู้รับเงิน จุดที่ 2 (Payee 2)"
+                  title="ลากเพื่อย้ายพิกัดชื่อผู้รับเงิน (ต้นขั้ว)"
                 >
-                  บริษัท ตัวอย่างเจริญพาณิชย์ จำกัด (จุด 2)
+                  บริษัท ตัวอย่างเจริญพาณิชย์ จำกัด
                   {renderFieldBadge('payee2')}
                 </div>
               )}
@@ -1095,19 +1076,19 @@ export const ActualSizeChequeModal: React.FC<ActualSizeChequeModalProps> = ({
                   top: `${liveConfig.fields.amountText.y + (liveConfig.globalOffsetY || 0)}mm`,
                   fontSize: `${liveConfig.fields.amountText.fontSizePt}pt`,
                 }}
-                className={`absolute whitespace-nowrap font-bold text-slate-900 leading-none z-20 cursor-move p-1 rounded-sm transition-shadow ${
+                className={`cheque-field-text absolute whitespace-nowrap font-bold text-slate-900 leading-none z-20 cursor-move rounded-xs transition-shadow ${
                   selectedField === 'amountText'
                     ? 'ring-2 ring-red-600 bg-red-100/70 text-red-950 shadow-md'
                     : 'hover:ring-1 hover:ring-red-400/80 hover:bg-red-50/50'
                 }`}
                 title="ลากเพื่อย้ายพิกัดจำนวนเงินตัวอักษร"
               >
-                ( =สองหมื่นห้าพันเจ็ดร้อยห้าสิบบาทถ้วน= )
+                สองหมื่นห้าพันเจ็ดร้อยห้าสิบบาทถ้วน
                 {renderFieldBadge('amountText')}
               </div>
 
               {/* ========================================================= */}
-              {/* 4. Amount Number Field 1 (Draggable - จุดที่ 1) */}
+              {/* 4. Amount Number Field 1 (Draggable) */}
               {/* ========================================================= */}
               <div
                 onMouseDown={(e) => handleStartDrag(e, 'amountNumber')}
@@ -1121,19 +1102,19 @@ export const ActualSizeChequeModal: React.FC<ActualSizeChequeModalProps> = ({
                   top: `${liveConfig.fields.amountNumber.y + (liveConfig.globalOffsetY || 0)}mm`,
                   fontSize: `${liveConfig.fields.amountNumber.fontSizePt}pt`,
                 }}
-                className={`absolute whitespace-nowrap font-black font-mono text-slate-900 leading-none z-20 tabular-nums cursor-move p-1 rounded-sm transition-shadow ${
+                className={`cheque-field-text absolute whitespace-nowrap font-black font-mono text-slate-900 leading-none z-20 tabular-nums cursor-move rounded-xs transition-shadow ${
                   selectedField === 'amountNumber'
                     ? 'ring-2 ring-red-600 bg-red-100/70 text-red-950 shadow-md'
                     : 'hover:ring-1 hover:ring-red-400/80 hover:bg-red-50/50'
                 }`}
-                title="ลากเพื่อย้ายพิกัดจำนวนเงินตัวเลข จุดที่ 1"
+                title="ลากเพื่อย้ายพิกัดจำนวนเงินตัวเลข"
               >
-                *25,750.00* (จุด 1)
+                *25,750.00*
                 {renderFieldBadge('amountNumber')}
               </div>
 
               {/* ========================================================= */}
-              {/* 4.1. Amount Number Field 2 (Draggable - จุดที่ 2 ปรับแยกกันได้) */}
+              {/* 4.1. Amount Number Field 2 (Draggable - ต้นขั้ว) */}
               {/* ========================================================= */}
               {liveConfig.fields.amountNumber2 && (
                 <div
@@ -1148,20 +1129,20 @@ export const ActualSizeChequeModal: React.FC<ActualSizeChequeModalProps> = ({
                     top: `${liveConfig.fields.amountNumber2.y + (liveConfig.globalOffsetY || 0)}mm`,
                     fontSize: `${liveConfig.fields.amountNumber2.fontSizePt}pt`,
                   }}
-                  className={`absolute whitespace-nowrap font-black font-mono text-slate-900 leading-none z-20 tabular-nums cursor-move p-1 rounded-sm transition-shadow ${
+                  className={`cheque-field-text absolute whitespace-nowrap font-black font-mono text-slate-900 leading-none z-20 tabular-nums cursor-move rounded-xs transition-shadow ${
                     selectedField === 'amountNumber2'
                       ? 'ring-2 ring-emerald-600 bg-emerald-100/70 text-emerald-950 shadow-md'
                       : 'hover:ring-1 hover:ring-emerald-400/80 hover:bg-emerald-50/50'
                   }`}
-                  title="ลากเพื่อย้ายพิกัดจำนวนเงินตัวเลข จุดที่ 2"
+                  title="ลากเพื่อย้ายพิกัดจำนวนเงินตัวเลข (ต้นขั้ว)"
                 >
-                  *25,750.00* (จุด 2)
+                  *25,750.00*
                   {renderFieldBadge('amountNumber2')}
                 </div>
               )}
 
               {/* ========================================================= */}
-              {/* 4.2. Amount Number Field 3 (Draggable - จุดที่ 3 ปรับแยกกันได้) */}
+              {/* 4.2. Amount Number Field 3 (Draggable - ยอดรวม) */}
               {/* ========================================================= */}
               {liveConfig.fields.amountNumber3 && (
                 <div
@@ -1176,14 +1157,14 @@ export const ActualSizeChequeModal: React.FC<ActualSizeChequeModalProps> = ({
                     top: `${liveConfig.fields.amountNumber3.y + (liveConfig.globalOffsetY || 0)}mm`,
                     fontSize: `${liveConfig.fields.amountNumber3.fontSizePt}pt`,
                   }}
-                  className={`absolute whitespace-nowrap font-black font-mono text-slate-900 leading-none z-20 tabular-nums cursor-move p-1 rounded-sm transition-shadow ${
+                  className={`cheque-field-text absolute whitespace-nowrap font-black font-mono text-slate-900 leading-none z-20 tabular-nums cursor-move rounded-xs transition-shadow ${
                     selectedField === 'amountNumber3'
                       ? 'ring-2 ring-purple-600 bg-purple-100/70 text-purple-950 shadow-md'
                       : 'hover:ring-1 hover:ring-purple-400/80 hover:bg-purple-50/50'
                   }`}
-                  title="ลากเพื่อย้ายพิกัดจำนวนเงินตัวเลข จุดที่ 3"
+                  title="ลากเพื่อย้ายพิกัดจำนวนเงินตัวเลข (ยอดรวม)"
                 >
-                  *25,750.00* (จุด 3)
+                  *25,750.00*
                   {renderFieldBadge('amountNumber3')}
                 </div>
               )}
@@ -1252,43 +1233,112 @@ export const ActualSizeChequeModal: React.FC<ActualSizeChequeModalProps> = ({
       </div>
 
       {/* Footer Info Bar */}
-      <div className="px-6 py-3 bg-slate-900 border-t border-slate-800 text-xs text-slate-400 flex flex-wrap items-center justify-between gap-3 shrink-0">
-        <div className="flex flex-wrap items-center gap-3">
-          <span className="flex items-center gap-1.5 font-bold text-slate-300">
-            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
-            <span>ขนาดเช็คจริง: {widthMm} × {heightMm} มม. ({widthCm} × {heightCm} ซม.)</span>
-          </span>
-          <span className="text-slate-600">|</span>
-          <span>ผู้รับเงิน: (X: {liveConfig.fields.payee.x}, Y: {liveConfig.fields.payee.y})</span>
-          <span className="text-slate-600">|</span>
-          <span>วันที่: (X: {liveConfig.fields.date.x}, Y: {liveConfig.fields.date.y})</span>
-          <span className="text-slate-600">|</span>
-          <span>ขีดคร่อม: (X: {liveConfig.crossing?.x || 45}, Y: {liveConfig.crossing?.y || 8})</span>
-          <span className="text-slate-600">|</span>
-          <span>ขีดฆ่า: (X: {liveConfig.strikeBearer?.x || 214}, Y: {liveConfig.strikeBearer?.y || 27.5})</span>
+      <div className="px-5 py-3 bg-slate-900 border-t border-slate-800 text-xs text-slate-400 flex flex-wrap items-center justify-between gap-3 shrink-0">
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
+            <span className={`w-2.5 h-2.5 rounded-full ${hasUnsavedChanges ? 'bg-amber-400 animate-pulse' : 'bg-emerald-500'}`} />
+            <span className="font-bold text-slate-300">ขนาดเช็ค: {widthMm} × {heightMm} มม.</span>
+          </div>
+
+          {hasUnsavedChanges ? (
+            <span className="px-2.5 py-0.5 rounded-md bg-amber-500/20 text-amber-300 border border-amber-500/30 text-xs font-bold flex items-center gap-1">
+              <AlertCircle className="w-3.5 h-3.5" />
+              <span>มีการปรับพิกัด (ยังไม่ได้บันทึก)</span>
+            </span>
+          ) : (
+            <span className="px-2.5 py-0.5 rounded-md bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-xs font-bold flex items-center gap-1">
+              <CheckCircle2 className="w-3.5 h-3.5" />
+              <span>พิกัดเป็นปัจจุบันแล้ว</span>
+            </span>
+          )}
         </div>
 
         <div className="flex items-center gap-2">
-          {hasUnsavedChanges && (
-            <button
-              type="button"
-              onClick={handleSave}
-              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-black text-xs cursor-pointer transition-colors flex items-center gap-1.5 shadow-sm"
-            >
-              <Save className="w-4 h-4" />
-              <span>บันทึกพิกัดก่อนปิด</span>
-            </button>
-          )}
-
+          {/* Button 1: Save Coordinates */}
           <button
             type="button"
-            onClick={onClose}
-            className="px-5 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-xl font-bold cursor-pointer transition-colors"
+            onClick={() => handleSave(false)}
+            className={`px-4 py-2 rounded-xl font-black text-xs cursor-pointer transition-all flex items-center gap-1.5 shadow-sm ring-1 ${
+              hasUnsavedChanges
+                ? 'bg-emerald-600 hover:bg-emerald-500 text-white ring-emerald-300 shadow-md shadow-emerald-900/40 animate-pulse'
+                : 'bg-slate-800 hover:bg-slate-700 text-slate-200 ring-slate-700'
+            }`}
+            title="บันทึกพิกัดลงระบบ (Ctrl+S)"
+          >
+            <Save className="w-4 h-4" />
+            <span>💾 บันทึกพิกัด</span>
+          </button>
+
+          {/* Button 2: Save and Close */}
+          <button
+            type="button"
+            onClick={() => handleSave(true)}
+            className="px-4 py-2 bg-emerald-700 hover:bg-emerald-600 text-white rounded-xl font-black text-xs cursor-pointer transition-all flex items-center gap-1.5 shadow-md shadow-emerald-900/40 ring-1 ring-emerald-400 active:scale-95"
+            title="บันทึกพิกัดและปิดหน้าต่างทันที"
+          >
+            <CheckCircle2 className="w-4 h-4" />
+            <span>✓ บันทึกและปิด</span>
+          </button>
+
+          {/* Button 3: Close */}
+          <button
+            type="button"
+            onClick={handleRequestClose}
+            className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-xl font-bold cursor-pointer transition-colors border border-slate-700 text-xs"
           >
             ปิดหน้าต่าง
           </button>
         </div>
       </div>
+
+      {/* Confirmation Dialog when Closing with Unsaved Changes */}
+      {showUnsavedConfirm && (
+        <div className="fixed inset-0 z-60 bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border-2 border-amber-400 space-y-4 animate-in zoom-in-95">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center font-bold text-xl shrink-0">
+                ⚠️
+              </div>
+              <div>
+                <h3 className="text-base font-black text-slate-900">
+                  มีพิกัดที่ยังไม่ได้บันทึก
+                </h3>
+                <p className="text-xs text-slate-600 mt-0.5">
+                  คุณได้ขยับตำแหน่งพิกัดเช็ค ต้องการบันทึกก่อนปิดหน้าต่างหรือไม่?
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-col sm:flex-row items-center justify-end gap-2 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setShowUnsavedConfirm(false)}
+                className="w-full sm:w-auto px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl cursor-pointer"
+              >
+                กลับไปแก้ไขต่อ
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowUnsavedConfirm(false);
+                  onClose();
+                }}
+                className="w-full sm:w-auto px-4 py-2 text-xs font-bold text-red-700 hover:bg-red-50 border border-red-200 rounded-xl cursor-pointer"
+              >
+                ปิดโดยไม่บันทึก
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSave(true)}
+                className="w-full sm:w-auto px-5 py-2 text-xs font-black text-white bg-emerald-600 hover:bg-emerald-500 rounded-xl shadow-md cursor-pointer flex items-center justify-center gap-1.5"
+              >
+                <Save className="w-3.5 h-3.5" />
+                <span>บันทึกและปิด</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

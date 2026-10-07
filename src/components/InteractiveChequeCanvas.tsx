@@ -433,18 +433,6 @@ export const InteractiveChequeCanvas: React.FC<InteractiveChequeCanvasProps> = (
 
         {/* Nudge Arrows, Font Size, Zoom Controls */}
         <div className="flex flex-wrap items-center gap-2">
-          {/* 1:1 Actual Size popup button */}
-          {onOpenActualSize && (
-            <button
-              type="button"
-              onClick={onOpenActualSize}
-              className="px-2.5 py-1 rounded-lg border border-red-300 bg-red-50 text-red-800 hover:bg-red-100 text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-colors shadow-2xs"
-              title="เปิดดูป็อปอัปขนาดจริง 100% 1:1 (Actual Physical Scale)"
-            >
-              <Maximize2 className="w-3.5 h-3.5 text-red-700" />
-              <span>ดูขนาดจริง 1:1</span>
-            </button>
-          )}
           {/* Nudge Arrows Pad */}
           {selectedField && (
             <div className="flex items-center gap-0.5 bg-slate-50 border border-slate-300 rounded-lg p-0.5 shadow-2xs">
@@ -629,6 +617,7 @@ export const InteractiveChequeCanvas: React.FC<InteractiveChequeCanvasProps> = (
             height: `${config.heightMm}mm`,
             transform: `scale(${zoomLevel})`,
             transformOrigin: 'top center',
+            ['--cheque-font' as any]: config.fontFamily || "'Sarabun', 'TH Sarabun New', 'Cordia New', sans-serif",
           }}
           className="bg-white border-2 border-slate-400 rounded-lg shadow-xl relative overflow-hidden text-black transition-transform duration-75 select-none shrink-0"
         >
@@ -752,9 +741,9 @@ export const InteractiveChequeCanvas: React.FC<InteractiveChequeCanvasProps> = (
               fontSize: `${config.fields.date.fontSizePt}pt`,
               letterSpacing: `${config.fields.date.letterSpacingMm || 2.2}mm`,
             }}
-            className={`absolute whitespace-nowrap font-bold leading-none cursor-grab active:cursor-grabbing z-20 transition-all ${
+            className={`cheque-field-text absolute whitespace-nowrap font-bold leading-none cursor-grab active:cursor-grabbing z-20 transition-all ${
               selectedField === 'date'
-                ? 'ring-2 ring-emerald-500 bg-emerald-50 shadow-md rounded-xs px-1.5 py-0.5'
+                ? 'ring-2 ring-emerald-500 bg-emerald-50 shadow-md rounded-xs'
                 : 'hover:ring-1 hover:ring-dashed hover:ring-sky-500 hover:bg-sky-50/50'
             }`}
           >
@@ -778,16 +767,16 @@ export const InteractiveChequeCanvas: React.FC<InteractiveChequeCanvasProps> = (
               top: `${config.fields.payee.y + (config.globalOffsetY || 0)}mm`,
               fontSize: `${config.fields.payee.fontSizePt}pt`,
             }}
-            className={`absolute font-bold whitespace-nowrap leading-none cursor-grab active:cursor-grabbing z-20 transition-all ${
+            className={`cheque-field-text absolute font-bold whitespace-nowrap leading-none cursor-grab active:cursor-grabbing z-20 transition-all ${
               selectedField === 'payee'
-                ? 'ring-2 ring-emerald-500 bg-emerald-50 shadow-md rounded-xs px-1.5 py-0.5'
+                ? 'ring-2 ring-emerald-500 bg-emerald-50 shadow-md rounded-xs'
                 : 'hover:ring-1 hover:ring-dashed hover:ring-sky-500 hover:bg-sky-50/50'
             }`}
           >
-            บริษัท ตัวอย่างเจริญพาณิชย์ จำกัด (จุด 1)
+            บริษัท ตัวอย่างเจริญพาณิชย์ จำกัด
             {selectedField === 'payee' && (
               <span className="absolute -top-5 left-0 bg-emerald-700 text-white text-[8px] px-1.5 py-0.5 rounded font-mono font-bold leading-tight shadow-xs whitespace-nowrap z-30 pointer-events-none">
-                2. ผู้รับเงิน (จุด 1): X:{config.fields.payee.x} Y:{config.fields.payee.y}
+                ผู้รับเงิน: X:{config.fields.payee.x} Y:{config.fields.payee.y}
               </span>
             )}
           </div>
@@ -805,16 +794,16 @@ export const InteractiveChequeCanvas: React.FC<InteractiveChequeCanvasProps> = (
                 top: `${config.fields.payee2.y + (config.globalOffsetY || 0)}mm`,
                 fontSize: `${config.fields.payee2.fontSizePt}pt`,
               }}
-              className={`absolute font-bold whitespace-nowrap leading-none cursor-grab active:cursor-grabbing z-20 transition-all ${
+              className={`cheque-field-text absolute font-bold whitespace-nowrap leading-none cursor-grab active:cursor-grabbing z-20 transition-all ${
                 selectedField === 'payee2'
-                  ? 'ring-2 ring-blue-500 bg-blue-50 shadow-md rounded-xs px-1.5 py-0.5'
+                  ? 'ring-2 ring-blue-500 bg-blue-50 shadow-md rounded-xs'
                   : 'hover:ring-1 hover:ring-dashed hover:ring-blue-500 hover:bg-blue-50/50'
               }`}
             >
-              บริษัท ตัวอย่างเจริญพาณิชย์ จำกัด (จุด 2)
+              บริษัท ตัวอย่างเจริญพาณิชย์ จำกัด
               {selectedField === 'payee2' && (
                 <span className="absolute -top-5 left-0 bg-blue-700 text-white text-[8px] px-1.5 py-0.5 rounded font-mono font-bold leading-tight shadow-xs whitespace-nowrap z-30 pointer-events-none">
-                  3. ผู้รับเงิน (จุด 2): X:{config.fields.payee2.x} Y:{config.fields.payee2.y}
+                  ผู้รับเงิน (ต้นขั้ว): X:{config.fields.payee2.x} Y:{config.fields.payee2.y}
                 </span>
               )}
             </div>
@@ -832,18 +821,16 @@ export const InteractiveChequeCanvas: React.FC<InteractiveChequeCanvasProps> = (
               top: `${config.fields.amountText.y + (config.globalOffsetY || 0)}mm`,
               fontSize: `${config.fields.amountText.fontSizePt}pt`,
             }}
-            className={`absolute font-bold whitespace-nowrap leading-none cursor-grab active:cursor-grabbing z-20 transition-all ${
+            className={`cheque-field-text absolute font-bold whitespace-nowrap leading-none cursor-grab active:cursor-grabbing z-20 transition-all ${
               selectedField === 'amountText'
-                ? 'ring-2 ring-emerald-500 bg-emerald-50 shadow-md rounded-xs px-1.5 py-0.5'
+                ? 'ring-2 ring-emerald-500 bg-emerald-50 shadow-md rounded-xs'
                 : 'hover:ring-1 hover:ring-dashed hover:ring-sky-500 hover:bg-sky-50/50'
             }`}
           >
-            {config.fields.amountText.prefix || '='}
             สองหมื่นห้าพันเจ็ดร้อยห้าสิบบาทถ้วน
-            {config.fields.amountText.suffix || '='}
             {selectedField === 'amountText' && (
               <span className="absolute -top-5 left-0 bg-emerald-700 text-white text-[8px] px-1.5 py-0.5 rounded font-mono font-bold leading-tight shadow-xs whitespace-nowrap z-30 pointer-events-none">
-                3. ตัวอักษร: X:{config.fields.amountText.x} Y:{config.fields.amountText.y}
+                ตัวอักษร: X:{config.fields.amountText.x} Y:{config.fields.amountText.y}
               </span>
             )}
           </div>
@@ -860,9 +847,9 @@ export const InteractiveChequeCanvas: React.FC<InteractiveChequeCanvasProps> = (
               top: `${config.fields.amountNumber.y + (config.globalOffsetY || 0)}mm`,
               fontSize: `${config.fields.amountNumber.fontSizePt}pt`,
             }}
-            className={`absolute font-bold tabular-nums whitespace-nowrap leading-none tracking-wider cursor-grab active:cursor-grabbing z-20 transition-all ${
+            className={`cheque-field-text absolute font-bold tabular-nums whitespace-nowrap leading-none tracking-wider cursor-grab active:cursor-grabbing z-20 transition-all ${
               selectedField === 'amountNumber'
-                ? 'ring-2 ring-emerald-500 bg-emerald-50 shadow-md rounded-xs px-1.5 py-0.5'
+                ? 'ring-2 ring-emerald-500 bg-emerald-50 shadow-md rounded-xs'
                 : 'hover:ring-1 hover:ring-dashed hover:ring-sky-500 hover:bg-sky-50/50'
             }`}
           >
@@ -871,7 +858,7 @@ export const InteractiveChequeCanvas: React.FC<InteractiveChequeCanvasProps> = (
             {config.fields.amountNumber.suffix || '*'}
             {selectedField === 'amountNumber' && (
               <span className="absolute -top-5 left-0 bg-emerald-700 text-white text-[8px] px-1.5 py-0.5 rounded font-mono font-bold leading-tight shadow-xs whitespace-nowrap z-30 pointer-events-none">
-                5. ตัวเลข (จุด 1): X:{config.fields.amountNumber.x} Y:{config.fields.amountNumber.y}
+                ตัวเลข: X:{config.fields.amountNumber.x} Y:{config.fields.amountNumber.y}
               </span>
             )}
           </div>
@@ -889,18 +876,18 @@ export const InteractiveChequeCanvas: React.FC<InteractiveChequeCanvasProps> = (
                 top: `${config.fields.amountNumber2.y + (config.globalOffsetY || 0)}mm`,
                 fontSize: `${config.fields.amountNumber2.fontSizePt}pt`,
               }}
-              className={`absolute font-bold tabular-nums whitespace-nowrap leading-none tracking-wider cursor-grab active:cursor-grabbing z-20 transition-all ${
+              className={`cheque-field-text absolute font-bold tabular-nums whitespace-nowrap leading-none tracking-wider cursor-grab active:cursor-grabbing z-20 transition-all ${
                 selectedField === 'amountNumber2'
-                  ? 'ring-2 ring-emerald-600 bg-emerald-100 shadow-md rounded-xs px-1.5 py-0.5 text-emerald-950'
+                  ? 'ring-2 ring-emerald-600 bg-emerald-100 shadow-md rounded-xs text-emerald-950'
                   : 'hover:ring-1 hover:ring-dashed hover:ring-emerald-500 hover:bg-emerald-50/50'
               }`}
             >
               {config.fields.amountNumber2.prefix || '*'}
-              25,750.00 (จุด 2)
+              25,750.00
               {config.fields.amountNumber2.suffix || '*'}
               {selectedField === 'amountNumber2' && (
                 <span className="absolute -top-5 left-0 bg-emerald-800 text-white text-[8px] px-1.5 py-0.5 rounded font-mono font-bold leading-tight shadow-xs whitespace-nowrap z-30 pointer-events-none">
-                  6. ตัวเลข (จุด 2): X:{config.fields.amountNumber2.x} Y:{config.fields.amountNumber2.y}
+                  ตัวเลข (ต้นขั้ว): X:{config.fields.amountNumber2.x} Y:{config.fields.amountNumber2.y}
                 </span>
               )}
             </div>
@@ -919,18 +906,18 @@ export const InteractiveChequeCanvas: React.FC<InteractiveChequeCanvasProps> = (
                 top: `${config.fields.amountNumber3.y + (config.globalOffsetY || 0)}mm`,
                 fontSize: `${config.fields.amountNumber3.fontSizePt}pt`,
               }}
-              className={`absolute font-bold tabular-nums whitespace-nowrap leading-none tracking-wider cursor-grab active:cursor-grabbing z-20 transition-all ${
+              className={`cheque-field-text absolute font-bold tabular-nums whitespace-nowrap leading-none tracking-wider cursor-grab active:cursor-grabbing z-20 transition-all ${
                 selectedField === 'amountNumber3'
-                  ? 'ring-2 ring-purple-600 bg-purple-100 shadow-md rounded-xs px-1.5 py-0.5 text-purple-950'
+                  ? 'ring-2 ring-purple-600 bg-purple-100 shadow-md rounded-xs text-purple-950'
                   : 'hover:ring-1 hover:ring-dashed hover:ring-purple-500 hover:bg-purple-50/50'
               }`}
             >
               {config.fields.amountNumber3.prefix || '*'}
-              25,750.00 (จุด 3)
+              25,750.00
               {config.fields.amountNumber3.suffix || '*'}
               {selectedField === 'amountNumber3' && (
                 <span className="absolute -top-5 left-0 bg-purple-800 text-white text-[8px] px-1.5 py-0.5 rounded font-mono font-bold leading-tight shadow-xs whitespace-nowrap z-30 pointer-events-none">
-                  7. ตัวเลข (จุด 3): X:{config.fields.amountNumber3.x} Y:{config.fields.amountNumber3.y}
+                  ตัวเลข (รวม): X:{config.fields.amountNumber3.x} Y:{config.fields.amountNumber3.y}
                 </span>
               )}
             </div>

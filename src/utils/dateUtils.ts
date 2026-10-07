@@ -87,9 +87,21 @@ export function getTodayISODate(): string {
 /**
  * Returns Thai fiscal year (ปีงบประมาณ)
  * Oct 1 (year) to Sep 30 (year+1) belongs to year+1
+ * Also supports parsing from dikaNumber suffix (e.g. 123/69 -> 2569)
  */
-export function getThaiFiscalYear(dateInput?: Date): number {
-  const d = dateInput || new Date();
+export function getThaiFiscalYear(dateInput?: string | Date | null, dikaNumber?: string | null): number {
+  if (dikaNumber) {
+    const match = dikaNumber.trim().match(/\/(\d{2,4})$/);
+    if (match) {
+      const yearPart = parseInt(match[1], 10);
+      if (yearPart < 100) {
+        return 2500 + yearPart;
+      }
+      return yearPart;
+    }
+  }
+  const d = typeof dateInput === 'string' ? new Date(dateInput) : (dateInput || new Date());
+  if (isNaN(d.getTime())) return new Date().getFullYear() + 543;
   const month = d.getMonth(); // 0-indexed, 9 = Oct
   const year = d.getFullYear();
   const fiscalYearAD = month >= 9 ? year + 1 : year;

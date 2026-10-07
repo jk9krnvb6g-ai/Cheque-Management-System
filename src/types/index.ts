@@ -1,5 +1,5 @@
 export type UserRole = 'ADMIN' | 'USER';
-export type UserStatus = 'ACTIVE' | 'INACTIVE';
+export type UserStatus = 'ACTIVE' | 'INACTIVE' | 'PENDING';
 
 export interface User {
   id: string;
@@ -23,6 +23,7 @@ export interface ChequeItem {
 export interface Cheque {
   id: string;
   chequeNumber?: string; // เลขที่เช็ค เช่น 1029384 (7-8 หลัก)
+  fiscalYear?: number; // ปีงบประมาณ พ.ศ. เช่น 2568, 2569, 2570
   stubDate: string; // YYYY-MM-DD (วันที่ต้นขั้ว)
   chequeDate?: string; // YYYY-MM-DD (วันที่บนหน้าเช็ค ถ้าไม่ระบุใช้วันที่ต้นขั้ว)
   stubPayeeName: string; // ชื่อผู้รับต้นขั้วเช็ค
