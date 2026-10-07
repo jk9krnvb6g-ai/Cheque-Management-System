@@ -431,6 +431,43 @@ router.post('/cheques', async (req, res) => {
     res.json({ success: true, data: cheque });
 });
 
+router.delete('/cheques/:id', async (req, res) => {
+    const { id } = req.params;
+    memoryDb.cheques = memoryDb.cheques.filter(c => c.id !== id);
+    if (isMysqlConnected && pool) {
+        try {
+            await pool.query('DELETE FROM cheques WHERE id = ?', [id]);
+        } catch (e) {
+            console.error('[MySQL Delete Cheque Error]', e.message);
+        }
+    }
+    res.json({ success: true, message: 'ลบข้อมูลเช็คสำเร็จ' });
+});
+
+router.post('/cheques/:id/void', async (req, res) => {
+    const { id } = req.params;
+    const { reason, operator } = req.body;
+    const voidBy = operator?.fullName || 'ผู้ใช้งาน';
+    const chq = memoryDb.cheques.find(c => c.id === id);
+    if (chq) {
+        chq.status = 'VOID';
+        chq.voidReason = reason;
+        chq.voidAt = new Date().toISOString();
+        chq.voidBy = voidBy;
+    }
+    if (isMysqlConnected && pool) {
+        try {
+            await pool.query(
+                'UPDATE cheques SET status = ?, void_reason = ?, void_at = NOW(), void_by = ? WHERE id = ?',
+                ['VOID', reason || 'ยกเลิก', voidBy, id]
+            );
+        } catch (e) {
+            console.error('[MySQL Void Cheque Error]', e.message);
+        }
+    }
+    res.json({ success: true, data: chq });
+});
+
 // 4. Users & Auth
 router.get('/users', async (req, res) => {
     if (!isMysqlConnected || !pool) {
@@ -442,6 +479,78 @@ router.get('/users', async (req, res) => {
     } catch (e) {
         res.json({ success: true, data: memoryDb.users });
     }
+});
+
+router.post('/users/register', async (req, res) => {
+    const { username, fullName, position, role, password } = req.body;
+    const cleanUsername = (username || '').toLowerCase().trim();
+    const newUser = {
+        id: `user_${Date.now()}`,
+        username: cleanUsername,
+        fullName: (fullName || '').trim(),
+        position: position || 'เจ้าหน้าที่การเงินและบัญชี',
+        role: role || 'USER',
+        status: 'PENDING',
+    };
+    memoryDb.users.push(newUser);
+    if (isMysqlConnected && pool) {
+        try {
+            const pwdHash = crypto.createHash('sha256').update(password || '1234').digest('hex');
+            await pool.query(
+                'INSERT INTO users (id, username, password_hash, full_name, position, role, status) VALUES (?, ?, ?, ?, ?, ?, ?)',
+                [newUser.id, newUser.username, pwdHash, newUser.fullName, newUser.position, newUser.role, newUser.status]
+            );
+        } catch (e) {
+            console.error('[MySQL Register User Error]', e.message);
+        }
+    }
+    res.json({ success: true, data: newUser });
+});
+
+router.put('/users/:id', async (req, res) => {
+    const { id } = req.params;
+    const { fullName, position, role, status, password } = req.body;
+    const idx = memoryDb.users.findIndex(u => u.id === id);
+    if (idx >= 0) {
+        if (fullName) memoryDb.users[idx].fullName = fullName;
+        if (position) memoryDb.users[idx].position = position;
+        if (role) memoryDb.users[idx].role = role;
+        if (status) memoryDb.users[idx].status = status;
+    }
+    if (isMysqlConnected && pool) {
+        try {
+            const updates = [];
+            const values = [];
+            if (fullName) { updates.push('full_name = ?'); values.push(fullName); }
+            if (position) { updates.push('position = ?'); values.push(position); }
+            if (role) { updates.push('role = ?'); values.push(role); }
+            if (status) { updates.push('status = ?'); values.push(status); }
+            if (password) {
+                const pwdHash = crypto.createHash('sha256').update(password).digest('hex');
+                updates.push('password_hash = ?'); values.push(pwdHash);
+            }
+            if (updates.length > 0) {
+                values.push(id);
+                await pool.query(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`, values);
+            }
+        } catch (e) {
+            console.error('[MySQL Update User Error]', e.message);
+        }
+    }
+    res.json({ success: true, data: memoryDb.users[idx] });
+});
+
+router.delete('/users/:id', async (req, res) => {
+    const { id } = req.params;
+    memoryDb.users = memoryDb.users.filter(u => u.id !== id && u.username !== id);
+    if (isMysqlConnected && pool) {
+        try {
+            await pool.query('DELETE FROM users WHERE id = ? OR username = ?', [id, id]);
+        } catch (e) {
+            console.error('[MySQL Delete User Error]', e.message);
+        }
+    }
+    res.json({ success: true, message: 'ลบผู้ใช้สำเร็จ' });
 });
 
 router.post('/users/login', async (req, res) => {

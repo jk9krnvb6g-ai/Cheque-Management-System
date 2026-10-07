@@ -505,7 +505,8 @@ export const mysqlUsers = {
     if (!isMysqlConnected) return fallbackDb.deleteUser(id);
 
     try {
-      await pool.query('DELETE FROM users WHERE id = ?', [id]);
+      await pool.query('DELETE FROM users WHERE id = ? OR username = ?', [id, id]);
+      fallbackDb.deleteUser(id);
       return true;
     } catch (err: any) {
       isMysqlConnected = false;

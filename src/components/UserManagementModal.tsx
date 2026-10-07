@@ -205,7 +205,7 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
   };
 
   // Confirm delete user
-  const executeDeleteUser = (targetUser: User) => {
+  const executeDeleteUser = async (targetUser: User) => {
     if (targetUser.id === currentUser.id) {
       setErrorMsg('ไม่สามารถลบบัญชีของตนเองที่กำลังเข้าสู่ระบบอยู่ได้');
       setDeleteTarget(null);
@@ -216,7 +216,7 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
       setDeleteTarget(null);
       return;
     }
-    StorageService.deleteUser(targetUser.id, currentUser);
+    await StorageService.deleteUser(targetUser.id, currentUser);
     loadUsers();
     setDeleteTarget(null);
     setSuccessMsg(`ลบบัญชีผู้ใช้ ${targetUser.fullName} เรียบร้อยแล้ว`);

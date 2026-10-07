@@ -571,19 +571,19 @@ export class StorageService {
     }).catch(() => {});
   }
 
-  static deleteUser(userId: string, operator: User): void {
+  static async deleteUser(userId: string, operator: User): Promise<boolean> {
     if (operator.role !== 'ADMIN') {
       console.warn('Unauthorized: Only administrators can delete users');
-      return;
+      return false;
     }
     let users = this.getUsers();
-    const target = users.find(u => u.id === userId);
-    if (!target) return;
+    const target = users.find(u => u.id === userId || u.username === userId);
+    if (!target) return false;
     if (target.username === 'admin') {
       console.warn('Cannot delete primary administrator account');
-      return;
+      return false;
     }
-    users = users.filter(u => u.id !== userId);
+    users = users.filter(u => u.id !== target.id && u.username !== target.username);
     localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users));
     this.addAuditLog({
       action: 'DELETE',
@@ -591,8 +591,15 @@ export class StorageService {
       details: `ลบผู้ใช้งาน ${target.fullName}`,
     }, operator);
 
-    // Sync to MySQL in background
-    apiClient.deleteUser(userId, operator).catch(() => {});
+    // Sync to MySQL
+    try {
+      await apiClient.deleteUser(target.id, operator);
+    } catch {
+      try {
+        await apiClient.deleteUser(target.username, operator);
+      } catch {}
+    }
+    return true;
   }
 
   static async updateUserProfile(
