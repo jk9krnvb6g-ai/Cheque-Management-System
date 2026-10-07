@@ -31,7 +31,7 @@ async function startServer() {
   // Body parser middleware
   app.use(express.json({ limit: '10mb' }));
 
-  // API Health Check (Support both /api and /Cash_Cheque/api)
+  // API Health Check (Support /api, /Cash_Cheque/api, and /api/Cash_Cheque)
   const handleHealth = (_req: Request, res: Response) => {
     res.json({
       status: 'ok',
@@ -47,6 +47,7 @@ async function startServer() {
   };
   app.get('/api/health', handleHealth);
   app.get('/Cash_Cheque/api/health', handleHealth);
+  app.get('/api/Cash_Cheque/health', handleHealth);
 
   // Database Connection Status endpoint
   const handleDbStatus = async (_req: Request, res: Response) => {
@@ -59,6 +60,7 @@ async function startServer() {
   };
   app.get('/api/db/status', handleDbStatus);
   app.get('/Cash_Cheque/api/db/status', handleDbStatus);
+  app.get('/api/Cash_Cheque/db/status', handleDbStatus);
 
   // Database Connection Test endpoint
   const handleDbTest = async (_req: Request, res: Response) => {
@@ -72,6 +74,7 @@ async function startServer() {
   };
   app.post('/api/db/test', handleDbTest);
   app.post('/Cash_Cheque/api/db/test', handleDbTest);
+  app.post('/api/Cash_Cheque/db/test', handleDbTest);
 
   // Database Configuration Update endpoint
   const handleDbConfig = async (req: Request, res: Response) => {
@@ -84,6 +87,7 @@ async function startServer() {
   };
   app.post('/api/db/config', handleDbConfig);
   app.post('/Cash_Cheque/api/db/config', handleDbConfig);
+  app.post('/api/Cash_Cheque/db/config', handleDbConfig);
 
   // Bulk push from browser local storage to MySQL
   const handleSyncPush = async (req: Request, res: Response) => {
@@ -97,19 +101,24 @@ async function startServer() {
   };
   app.post('/api/sync/push', handleSyncPush);
   app.post('/Cash_Cheque/api/sync/push', handleSyncPush);
+  app.post('/api/Cash_Cheque/sync/push', handleSyncPush);
 
-  // Main CRUD Routes (Both /api and /Cash_Cheque/api)
+  // Main CRUD Routes (Supports /api, /Cash_Cheque/api, and /api/Cash_Cheque)
   app.use('/api/cheques', chequeRouter);
   app.use('/Cash_Cheque/api/cheques', chequeRouter);
+  app.use('/api/Cash_Cheque/cheques', chequeRouter);
 
   app.use('/api/templates', templateRouter);
   app.use('/Cash_Cheque/api/templates', templateRouter);
+  app.use('/api/Cash_Cheque/templates', templateRouter);
 
   app.use('/api/users', userRouter);
   app.use('/Cash_Cheque/api/users', userRouter);
+  app.use('/api/Cash_Cheque/users', userRouter);
 
   app.use('/api/logs', logRouter);
   app.use('/Cash_Cheque/api/logs', logRouter);
+  app.use('/api/Cash_Cheque/logs', logRouter);
 
   // Frontend integration
   if (!isProd) {

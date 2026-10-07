@@ -7,96 +7,40 @@ import { Cheque, BankTemplateConfig, BankType, User, ChequePrintLog, AuditLog } 
 
 let cachedWorkingUrl: string | null = null;
 
-// ฟังก์ชันหา URL ของ Backend API
+// ฟังก์ชันหา URL ของ Backend API บนพอร์ต 3002
 export function getApiBaseUrl(): string {
-  if (typeof window === 'undefined') return '/api';
+  if (typeof window === 'undefined') return '/api/Cash_Cheque';
 
-  // 1. ตรวจสอบว่ามีการระบุ Custom API URL ไว้ใน LocalStorage หรือไม่
-  const custom = localStorage.getItem('cheque_sys_api_url');
-  if (custom && custom.trim()) {
-    return custom.trim().replace(/\/+$/, '');
+  // ล้างค่า URL เก่าที่อาจตกค้างใน LocalStorage
+  try {
+    localStorage.removeItem('cheque_sys_api_url');
+  } catch {}
+
+  const host = window.location.hostname;
+  const port = window.location.port;
+
+  // 1. ถ้าเข้าใช้งานผ่านเครื่องแม่ข่ายในวง LAN หรือ Localhost แต่ไม่ได้เปิดผ่านพอร์ต 3002
+  // (เช่น เปิดผ่าน IIS พอร์ต 80 หรือ 3001) ให้เชื่อมต่อไปยังพอร์ต 3002 ที่รัน API อยู่
+  if ((host === 'localhost' || host === '127.0.0.1' || host.startsWith('10.') || host.startsWith('192.168.')) && port !== '3002') {
+    return `http://${host}:3002/api/Cash_Cheque`;
   }
 
-  // 2. ถ้าเคยตรวจพบ URL ที่ทำงานได้ก่อนหน้านี้ใน Session
-  if (cachedWorkingUrl) {
-    return cachedWorkingUrl;
-  }
-
-  // 3. ค่าเริ่มต้นสำหรับสภาพแวดล้อมต่างๆ:
-  // กรณีเข้าใช้งานผ่าน Path ย่อย (เช่น /Cash_Cheque/ บน IIS หรือ Node)
+  // 2. ถ้าเปิดใช้งานผ่านพอร์ต 3002 โดยตรง หรือผ่าน Cloud Preview (AI Studio)
   const pathname = window.location.pathname || '';
   if (pathname.startsWith('/Cash_Cheque')) {
     return '/Cash_Cheque/api';
   }
-
-  // กรณีทั่วไป: Same-Origin relative path /api (AI Studio Preview, Vite Dev, Node Production)
-  return '/api';
+  return '/api/Cash_Cheque';
 }
 
-export function setCustomApiUrl(url: string): void {
-  if (!url || !url.trim()) {
+export function setCustomApiUrl(_url: string): void {
+  try {
     localStorage.removeItem('cheque_sys_api_url');
-    cachedWorkingUrl = null;
-  } else {
-    const clean = url.trim().replace(/\/+$/, '');
-    localStorage.setItem('cheque_sys_api_url', clean);
-    cachedWorkingUrl = clean;
-  }
+  } catch {}
 }
 
-// ฟังก์ชันสแกนหา URL ของ Backend API ที่ทำงานอยู่โดยอัตโนมัติ
 export async function autoDetectApiUrl(): Promise<string | null> {
-  if (typeof window === 'undefined') return null;
-
-  const host = window.location.hostname;
-  const isHttps = window.location.protocol === 'https:';
-  const pathname = window.location.pathname || '';
-
-  const candidates: string[] = [
-    // 1. Custom URL ถ้ามี
-    ...(localStorage.getItem('cheque_sys_api_url') ? [localStorage.getItem('cheque_sys_api_url')!] : []),
-    // 2. Relative URLs (สำหรับ Same-Origin, IIS Reverse Proxy หรือ Node Server)
-    pathname.startsWith('/Cash_Cheque') ? '/Cash_Cheque/api' : '/api',
-    '/api',
-    '/Cash_Cheque/api',
-  ];
-
-  // ถ้าหน้าเว็บเปิดด้วย HTTP (หรือบนเครื่อง localhost) สามารถทดสอบ Direct Port 3003 ได้โดยไม่ติด Mixed Content
-  if (!isHttps || host === 'localhost' || host === '127.0.0.1') {
-    candidates.push(
-      `http://${host}:3003/api`,
-      `http://${host}:3003/Cash_Cheque/api`,
-      'http://localhost:3003/api',
-      'http://127.0.0.1:3003/api',
-      'http://10.2.0.13:3003/api',
-      'http://10.1.0.201:3003/api'
-    );
-  }
-
-  for (const rawUrl of candidates) {
-    const url = rawUrl.replace(/\/+$/, '');
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 1500);
-      const res = await fetch(`${url}/health`, {
-        signal: controller.signal,
-        headers: { Accept: 'application/json' },
-      });
-      clearTimeout(timeoutId);
-      if (res.ok) {
-        const data = await res.json();
-        if (data.status === 'ok') {
-          cachedWorkingUrl = url;
-          localStorage.setItem('cheque_sys_api_url', url);
-          return url;
-        }
-      }
-    } catch {
-      // ข้าม candidate ที่ติดต่อไม่ได้
-    }
-  }
-
-  return null;
+  return getApiBaseUrl();
 }
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {

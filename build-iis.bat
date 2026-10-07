@@ -58,10 +58,10 @@ echo ======================================================================
 echo.
 echo [ข้อแนะนำสำคัญ] เพื่อให้ระบบเชื่อมต่อฐานข้อมูล MySQL 10.1.0.201 ได้:
 echo 1. ดับเบิ้ลคลิกไฟล์ start-backend.bat หรือ start-backend-hidden.vbs
-echo    เพื่อเปิดเซิร์ฟเวอร์ Backend API (พอร์ต 3003)
+echo    เพื่อเปิดเซิร์ฟเวอร์ Backend API (พอร์ต 3002)
 echo.
 echo 2. เข้าใช้งานระบบได้ที่:
-echo    👉 ผ่าน IIS:      https://10.2.0.13:3001/Cash_Cheque/
-echo    👉 ผ่าน Node.js:  http://10.2.0.13:3003/Cash_Cheque/ (แนะนำ เสถียร 100%)
+echo    👉 ผ่าน IIS:      http://10.2.0.13/Cash_Cheque/ หรือ https://10.2.0.13:3001/Cash_Cheque/
+echo    👉 ผ่าน Node.js:  http://10.2.0.13:3002/Cash_Cheque/ (แนะนำ เสถียร 100%)
 echo.
 pause
