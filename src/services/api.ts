@@ -44,43 +44,68 @@ export async function autoDetectApiUrl(): Promise<string | null> {
 }
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const baseUrl = getApiBaseUrl();
-  const url = `${baseUrl}${path.startsWith('/') ? path : `/${path}`}`;
-  
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    ...(options.headers as Record<string, string> || {}),
-  };
+  const host = typeof window !== 'undefined' ? window.location.hostname : 'localhost';
+  const cleanPath = path.startsWith('/') ? path : `/${path}`;
 
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 8000);
+  // รายการ Candidate Base URLs สำหรับเชื่อมต่อ (ลองอันที่ใช้งานได้อัตโนมัติ)
+  const candidateBases = [
+    cachedWorkingUrl,
+    getApiBaseUrl(),
+    '/Cash_Cheque/api',
+    '/api',
+    '/api/Cash_Cheque',
+    `http://${host}:3002/api/Cash_Cheque`,
+    `http://${host}:3003/api`,
+    `http://${host}:3003/Cash_Cheque/api`,
+    'http://localhost:3002/api/Cash_Cheque',
+    'http://localhost:3003/api',
+  ];
 
-  try {
-    const res = await fetch(url, {
-      ...options,
-      headers,
-      signal: controller.signal,
-    });
-    clearTimeout(timeoutId);
+  const uniqueBases = Array.from(new Set(candidateBases.filter((b): b is string => Boolean(b && b.trim()))));
+  let lastErr: any = null;
 
-    if (!res.ok) {
-      let errMsg = `HTTP Error ${res.status}`;
-      try {
-        const errJson = await res.json();
-        if (errJson.message) errMsg = errJson.message;
-      } catch {}
-      throw new Error(errMsg);
+  for (const base of uniqueBases) {
+    const url = `${base}${cleanPath}`;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3000);
+
+    try {
+      const res = await fetch(url, {
+        ...options,
+        headers: {
+          'Content-Type': 'application/json',
+          ...(options.headers as Record<string, string> || {}),
+        },
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+
+      // ถ้าได้ 404 แสดงว่าพอร์ตหรือพาธนี้ไม่มี route นี้ ให้ลอง candidate อื่น
+      if (res.status === 404) {
+        lastErr = new Error(`HTTP Error 404: ไม่พบเส้นทาง API บน [${url}]`);
+        continue;
+      }
+
+      if (!res.ok) {
+        let errMsg = `HTTP Error ${res.status}`;
+        try {
+          const errJson = await res.json();
+          if (errJson.message) errMsg = errJson.message;
+        } catch {}
+        throw new Error(errMsg);
+      }
+
+      // บันทึก URL ที่ใช้งานได้สำเร็จ
+      cachedWorkingUrl = base;
+      return await res.json();
+    } catch (err: any) {
+      clearTimeout(timeoutId);
+      lastErr = err;
+      // ข้ามไปลอง candidate ตัวถัดไป
     }
-
-    return await res.json();
-  } catch (err: any) {
-    clearTimeout(timeoutId);
-    let msg = err.message || 'การเชื่อมต่อล้มเหลว';
-    if (msg.includes('Failed to fetch') || msg.includes('NetworkError') || msg.includes('abort')) {
-      msg = `ไม่สามารถติดต่อเซิร์ฟเวอร์ Backend API ที่ [${url}] ได้ — กรุณาตรวจสอบว่าได้เปิด start-backend.bat แล้วหรือยัง`;
-    }
-    throw new Error(msg);
   }
+
+  throw lastErr || new Error('ไม่สามารถเชื่อมต่อกับเซิร์ฟเวอร์ Backend API ได้');
 }
 
 export const apiClient = {

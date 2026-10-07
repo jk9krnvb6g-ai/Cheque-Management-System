@@ -107,7 +107,9 @@ export const DbStatusModal: React.FC<DbStatusModalProps> = ({ isOpen, onClose, o
                 <div>
                   <div className="text-sm font-black">ยังไม่ได้เชื่อมต่อฐานข้อมูล MySQL (ออฟไลน์)</div>
                   <div className="text-xs text-rose-800">
-                    {status?.error || `ไม่สามารถเชื่อมต่อไปยังเครื่อง ${targetHost}:${targetPort} ได้`}
+                    {status?.error?.includes('404')
+                      ? 'HTTP Error 404: ไม่พบเส้นทาง Cash_Cheque บนพอร์ต 3002 (เนื่องจากเป็นเซิร์ฟเวอร์ของระบบ Procurement กรุณาเปิดไฟล์ start-backend.bat ของระบบเช็ค)'
+                      : (status?.error || `ไม่สามารถเชื่อมต่อไปยังเครื่อง ${targetHost}:${targetPort} ได้`)}
                   </div>
                 </div>
               </div>
