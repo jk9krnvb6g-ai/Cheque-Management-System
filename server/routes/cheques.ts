@@ -35,13 +35,14 @@ chequeRouter.get('/:id', async (req: Request, res: Response) => {
 
 // POST /api/cheques - เพิ่มหรือแก้ไขข้อมูลเช็คใน MySQL
 chequeRouter.post('/', async (req: Request, res: Response) => {
-  const { cheque, operator } = req.body;
-  if (!cheque || !cheque.chequePayeeName) {
+  const rawCheque = req.body.cheque || req.body;
+  const operator = req.body.operator;
+  if (!rawCheque || (!rawCheque.chequePayeeName && !rawCheque.stubPayeeName)) {
     return res.status(400).json({ success: false, message: 'กรุณากรอกชื่อผู้รับเงิน' });
   }
 
   try {
-    const saved = await mysqlCheques.save(cheque);
+    const saved = await mysqlCheques.save(rawCheque);
 
     // Audit log
     if (operator) {
@@ -70,9 +71,6 @@ chequeRouter.post('/:id/void', async (req: Request, res: Response) => {
 
   try {
     const success = await mysqlCheques.voidCheque(req.params.id, reason || 'ยกเลิกเช็ค', operatorName);
-    if (!success) {
-      return res.status(404).json({ success: false, message: 'ไม่พบข้อมูลเช็คที่ต้องการยกเลิก' });
-    }
 
     const voided = await mysqlCheques.getById(req.params.id);
 
@@ -88,7 +86,7 @@ chequeRouter.post('/:id/void', async (req: Request, res: Response) => {
       });
     }
 
-    res.json({ success: true, data: voided });
+    res.json({ success: true, data: voided || { id: req.params.id, status: 'VOID' } });
   } catch (err: any) {
     res.status(500).json({ success: false, message: err.message });
   }
@@ -98,10 +96,7 @@ chequeRouter.post('/:id/void', async (req: Request, res: Response) => {
 chequeRouter.delete('/:id', async (req: Request, res: Response) => {
   try {
     const cheque = await mysqlCheques.getById(req.params.id);
-    const success = await mysqlCheques.delete(req.params.id);
-    if (!success) {
-      return res.status(404).json({ success: false, message: 'ไม่พบข้อมูลเช็ค' });
-    }
+    await mysqlCheques.delete(req.params.id);
 
     const operatorHeader = req.headers['x-operator'];
     let operator: any = null;

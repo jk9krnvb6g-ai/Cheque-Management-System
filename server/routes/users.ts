@@ -118,7 +118,10 @@ userRouter.put('/:id', async (req: Request, res: Response) => {
   const { fullName, position, role, status, password, operator } = req.body;
 
   try {
-    const existing = await mysqlUsers.findById(id);
+    let existing = await mysqlUsers.findById(id);
+    if (!existing) {
+      existing = await mysqlUsers.findByUsername(id);
+    }
     if (!existing) {
       return res.status(404).json({ success: false, message: 'ไม่พบผู้ใช้ในระบบ' });
     }
@@ -133,6 +136,7 @@ userRouter.put('/:id', async (req: Request, res: Response) => {
     };
 
     await mysqlUsers.save(updatedUser);
+    await mysqlUsers.update(existing.id, updatedUser);
 
     if (operator) {
       await mysqlAuditLogs.add({
@@ -170,13 +174,15 @@ userRouter.delete('/:id', async (req: Request, res: Response) => {
       existing = await mysqlUsers.findByUsername(id);
     }
 
-    if (existing?.username === 'admin' || id.toLowerCase() === 'admin') {
+    if (existing?.username === 'admin' || id.toLowerCase() === 'admin' || id === 'user_admin') {
       return res.status(400).json({ success: false, message: 'ไม่อนุญาตให้ลบบัญชีผู้ดูแลระบบหลัก (admin)' });
     }
 
     const targetId = existing?.id || id;
-    const success = await mysqlUsers.delete(targetId);
-    if (success && operator && existing) {
+    await mysqlUsers.delete(targetId);
+    await mysqlUsers.delete(id);
+
+    if (operator && existing) {
       await mysqlAuditLogs.add({
         id: `audit_udel_${Date.now()}`,
         action: 'DELETE',
@@ -188,7 +194,7 @@ userRouter.delete('/:id', async (req: Request, res: Response) => {
       });
     }
 
-    res.json({ success: true });
+    res.json({ success: true, message: 'ลบผู้ใช้สำเร็จ' });
   } catch (err: any) {
     res.status(500).json({ success: false, message: err.message });
   }

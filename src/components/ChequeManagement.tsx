@@ -203,9 +203,9 @@ export const ChequeManagement: React.FC<ChequeManagementProps> = ({
     URL.revokeObjectURL(url);
   };
 
-  const handleDeleteConfirm = () => {
+  const handleDeleteConfirm = async () => {
     if (chequeToDelete) {
-      StorageService.deleteCheque(chequeToDelete.id, currentUser);
+      await StorageService.deleteCheque(chequeToDelete.id, currentUser);
       setChequeToDelete(null);
       onRefreshData();
     }

@@ -464,15 +464,25 @@ export class StorageService {
       ]);
 
       if (cheques && Array.isArray(cheques)) {
-        localStorage.setItem(STORAGE_KEYS.CHEQUES, JSON.stringify(cheques));
+        const cleanedCheques = cheques.map(c => ({
+          ...c,
+          stubPayeeName: fixThaiMojibake(c.stubPayeeName),
+          chequePayeeName: fixThaiMojibake(c.chequePayeeName),
+          totalAmountThaiText: fixThaiMojibake(c.totalAmountThaiText),
+          memo: c.memo ? fixThaiMojibake(c.memo) : c.memo,
+          createdBy: fixThaiMojibake(c.createdBy, c.createdByUsername),
+        }));
+        localStorage.setItem(STORAGE_KEYS.CHEQUES, JSON.stringify(cleanedCheques));
       }
       if (users && Array.isArray(users) && users.length > 0) {
-        // อัปเดตข้อมูลผู้ใช้จาก MySQL แต่เก็บ passwordHash เดิมถ้าฝั่ง MySQL ส่ง safe user
+        // อัปเดตข้อมูลผู้ใช้จาก MySQL พร้อมซ่อมแซมภาษาไทยต่างดาวอัตโนมัติ
         const localUsers = this.getUsers();
         const mergedUsers = users.map(u => {
           const local = localUsers.find(lu => lu.id === u.id || lu.username === u.username);
           return {
             ...u,
+            fullName: fixThaiMojibake(u.fullName, u.username),
+            position: fixThaiMojibake(u.position || '', u.username),
             passwordHash: u.passwordHash || local?.passwordHash || '',
           };
         });
@@ -627,8 +637,12 @@ export class StorageService {
     if (idx === -1) return { success: false, error: 'ไม่พบผู้ใช้งานนี้ในระบบ' };
 
     const target = users[idx];
-    if (data.fullName !== undefined && data.fullName.trim()) target.fullName = data.fullName.trim();
-    if (data.position !== undefined) target.position = data.position.trim();
+    if (data.fullName !== undefined && data.fullName.trim()) {
+      target.fullName = fixThaiMojibake(data.fullName.trim(), target.username);
+    }
+    if (data.position !== undefined) {
+      target.position = fixThaiMojibake(data.position.trim(), target.username);
+    }
     if (data.role !== undefined) target.role = data.role;
     if (data.status !== undefined) target.status = data.status;
     if (data.passwordPlain && data.passwordPlain.trim().length >= 4) {
@@ -887,9 +901,9 @@ export class StorageService {
     return { success: true, user: newUser };
   }
 
-  static approveUser(userId: string, operator: User): User | null {
+  static async approveUser(userId: string, operator: User): Promise<User | null> {
     const users = this.getUsers();
-    const user = users.find(u => u.id === userId);
+    const user = users.find(u => u.id === userId || u.username === userId);
     if (!user) return null;
     user.status = 'ACTIVE';
     localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users));
@@ -900,13 +914,19 @@ export class StorageService {
     }, operator);
 
     // Sync status to MySQL
-    apiClient.updateUser(userId, { status: 'ACTIVE', operator }).catch(() => {});
+    try {
+      await apiClient.updateUser(user.id, { status: 'ACTIVE', operator });
+    } catch {
+      try {
+        await apiClient.updateUser(user.username, { status: 'ACTIVE', operator });
+      } catch {}
+    }
     return user;
   }
 
-  static toggleUserStatus(userId: string, operator: User): User | null {
+  static async toggleUserStatus(userId: string, operator: User): Promise<User | null> {
     const users = this.getUsers();
-    const user = users.find(u => u.id === userId);
+    const user = users.find(u => u.id === userId || u.username === userId);
     if (!user) return null;
     user.status = user.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE';
     localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users));
@@ -917,13 +937,19 @@ export class StorageService {
     }, operator);
 
     // Sync to MySQL
-    apiClient.updateUser(userId, { status: user.status, operator }).catch(() => {});
+    try {
+      await apiClient.updateUser(user.id, { status: user.status, operator });
+    } catch {
+      try {
+        await apiClient.updateUser(user.username, { status: user.status, operator });
+      } catch {}
+    }
     return user;
   }
 
-  static updateUserRole(userId: string, newRole: UserRole, operator: User): User | null {
+  static async updateUserRole(userId: string, newRole: UserRole, operator: User): Promise<User | null> {
     const users = this.getUsers();
-    const user = users.find(u => u.id === userId);
+    const user = users.find(u => u.id === userId || u.username === userId);
     if (!user) return null;
     user.role = newRole;
     localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users));
@@ -934,7 +960,13 @@ export class StorageService {
     }, operator);
 
     // Sync to MySQL
-    apiClient.updateUser(userId, { role: newRole, operator }).catch(() => {});
+    try {
+      await apiClient.updateUser(user.id, { role: newRole, operator });
+    } catch {
+      try {
+        await apiClient.updateUser(user.username, { role: newRole, operator });
+      } catch {}
+    }
     return user;
   }
 
@@ -1088,14 +1120,14 @@ export class StorageService {
     return cheque;
   }
 
-  static deleteCheque(chequeId: string, operator: User): void {
+  static async deleteCheque(chequeId: string, operator: User): Promise<boolean> {
     if (operator.role !== 'ADMIN') {
       console.warn('Unauthorized: Only administrators can delete cheques');
-      return;
+      return false;
     }
     let cheques = this.getCheques();
     const target = cheques.find(c => c.id === chequeId);
-    if (!target) return;
+    if (!target) return false;
 
     cheques = cheques.filter(c => c.id !== chequeId);
     localStorage.setItem(STORAGE_KEYS.CHEQUES, JSON.stringify(cheques));
@@ -1106,10 +1138,13 @@ export class StorageService {
       details: `ลบรายการเช็ค ${target.chequePayeeName} มูลค่า ${target.totalAmount.toLocaleString('th-TH', { minimumFractionDigits: 2 })} บาท`,
     }, operator);
 
-    // ส่งข้อมูลลบเช็คไป MySQL (10.1.0.201)
-    apiClient.deleteCheque(chequeId, operator).catch(err => {
+    // ส่งข้อมูลลบเช็คไป MySQL (10.1.0.201) และรอให้ยืนยันการลบ
+    try {
+      await apiClient.deleteCheque(chequeId, operator);
+    } catch (err) {
       console.warn('[MySQL Delete Cheque Warning]', err);
-    });
+    }
+    return true;
   }
 
   // Print Logs - Strictly Append-Only!

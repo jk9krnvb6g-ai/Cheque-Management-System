@@ -4,7 +4,7 @@ import { chequeRouter } from './server/routes/cheques';
 import { templateRouter } from './server/routes/templates';
 import { userRouter } from './server/routes/users';
 import { logRouter } from './server/routes/logs';
-import { testConnection, getDbStatus, bulkPushToMysql, updateDbConfig, DB_CONFIG } from './server/db/mysql';
+import { testConnection, getDbStatus, bulkPushToMysql, updateDbConfig, repairThaiCharset, DB_CONFIG } from './server/db/mysql';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -88,6 +88,19 @@ async function startServer() {
   app.post('/api/db/config', handleDbConfig);
   app.post('/Cash_Cheque/api/db/config', handleDbConfig);
   app.post('/api/Cash_Cheque/db/config', handleDbConfig);
+
+  // Database Thai Charset & Mojibake Repair endpoint
+  const handleDbRepair = async (_req: Request, res: Response) => {
+    try {
+      const result = await repairThaiCharset();
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ success: false, message: err.message });
+    }
+  };
+  app.post('/api/db/repair', handleDbRepair);
+  app.post('/Cash_Cheque/api/db/repair', handleDbRepair);
+  app.post('/api/Cash_Cheque/db/repair', handleDbRepair);
 
   // Bulk push from browser local storage to MySQL
   const handleSyncPush = async (req: Request, res: Response) => {

@@ -180,28 +180,28 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
   };
 
   // Toggle user status
-  const handleToggleStatus = (targetUser: User) => {
+  const handleToggleStatus = async (targetUser: User) => {
     if (targetUser.id === currentUser.id) {
       setErrorMsg('ไม่สามารถระงับการใช้งานบัญชีของตนเองที่กำลังเข้าสู่ระบบอยู่ได้');
       return;
     }
-    StorageService.toggleUserStatus(targetUser.id, currentUser);
+    await StorageService.toggleUserStatus(targetUser.id, currentUser);
     loadUsers();
     setSuccessMsg(`เปลี่ยนสถานะบัญชี ${targetUser.fullName} สำเร็จ`);
     if (onRefreshData) onRefreshData();
   };
 
   // Approve pending user
-  const handleApproveUser = (targetUser: User) => {
-    StorageService.approveUser(targetUser.id, currentUser);
+  const handleApproveUser = async (targetUser: User) => {
+    await StorageService.approveUser(targetUser.id, currentUser);
     loadUsers();
     setSuccessMsg(`อนุมัติการใช้งานให้แก่ "${targetUser.fullName}" (@${targetUser.username}) เรียบร้อยแล้ว สมาชิกสามารถเข้าสู่ระบบเพื่อปฏิบัติงานได้ทันที`);
     if (onRefreshData) onRefreshData();
   };
 
   // Change user role
-  const handleChangeRole = (targetUser: User, newRole: UserRole) => {
-    StorageService.updateUserRole(targetUser.id, newRole, currentUser);
+  const handleChangeRole = async (targetUser: User, newRole: UserRole) => {
+    await StorageService.updateUserRole(targetUser.id, newRole, currentUser);
     loadUsers();
     setSuccessMsg(`ปรับสิทธิ์ ${targetUser.fullName} เป็น ${newRole} สำเร็จ`);
     if (onRefreshData) onRefreshData();

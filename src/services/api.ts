@@ -188,6 +188,16 @@ export const apiClient = {
     });
   },
 
+  async repairDb(): Promise<{ success: boolean; message: string }> {
+    try {
+      return await request<{ success: boolean; message: string }>('/db/repair', {
+        method: 'POST',
+      });
+    } catch (e: any) {
+      return { success: false, message: e.message || 'ไม่สามารถส่งคำขอกู้คืนภาษาไทยได้' };
+    }
+  },
+
   // 2. Cheques
   async getCheques(fiscalYear?: number | 'ALL'): Promise<Cheque[]> {
     const query = fiscalYear && fiscalYear !== 'ALL' ? `?fiscalYear=${fiscalYear}` : '';

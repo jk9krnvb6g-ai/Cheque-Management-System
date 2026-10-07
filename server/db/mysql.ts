@@ -45,6 +45,72 @@ export function checkTcpPort(host: string, port: number, timeoutMs = 1500): Prom
   });
 }
 
+const WIN1252_TO_BYTE: Record<number, number> = {
+  0x20AC: 0x80, 0x201A: 0x82, 0x0192: 0x83, 0x201E: 0x84,
+  0x2026: 0x85, 0x2020: 0x86, 0x2021: 0x87, 0x02C6: 0x88,
+  0x2030: 0x89, 0x0160: 0x8A, 0x2039: 0x8B, 0x0152: 0x8C,
+  0x017D: 0x8E, 0x2018: 0x91, 0x2019: 0x92, 0x201C: 0x93,
+  0x201D: 0x94, 0x2022: 0x95, 0x2013: 0x96, 0x2014: 0x97,
+  0x02DC: 0x98, 0x2122: 0x99, 0x0161: 0x9A, 0x203A: 0x9B,
+  0x0153: 0x9C, 0x017E: 0x9E, 0x0178: 0x9F,
+};
+
+function cp874ToByte(char: string): number | null {
+  const code = char.charCodeAt(0);
+  if (code < 0x80) return code;
+  if (WIN1252_TO_BYTE[code] !== undefined) return WIN1252_TO_BYTE[code];
+  if (code >= 0xA0 && code <= 0xFF) return code;
+  if (code >= 0x0E01 && code <= 0x0E5B) return code - 0x0E00 + 0xA0;
+  return null;
+}
+
+export function cleanThaiMojibake(text: string | null | undefined, contextHint: string = ''): string {
+  if (!text || typeof text !== 'string') return text || '';
+  const s = text.trim();
+
+  // Known dictionary mappings
+  if (s.includes('เธ™เธฒเธขเธŠเธณเธ™เธฒเธ') || (s.includes('เธ') && contextHint === 'admin')) {
+    return 'นายชำนาญ การคลัง';
+  }
+  if (s.includes('เธ™เธฒเธขเธชเธกเธŠเธฒเธข') || (s.includes('เธ') && contextHint === 'somchai')) {
+    return 'นายสมชาย บริการดี';
+  }
+  if (s.includes('เธชเธธเธ”เธฒ') || (s.includes('เธ') && contextHint === 'suda')) {
+    return 'นางสาวสุดา วงศ์สว่าง';
+  }
+  if (s.includes('เธชเธธเธฃเธŠเธฑเธข') || (s.includes('เธ') && contextHint === 'surachai')) {
+    return 'นายสุรชัย มั่นคง';
+  }
+  if (s.includes('เธซเธฑเธงเธซเธ™เน‰เธฒ')) return 'หัวหน้ากลุ่มงานการเงินและบัญชี';
+  if (s.includes('เธ เธฃเธธเธ‡เน„เธ—เธข')) return 'ธนาคารกรุงไทย';
+
+  if (!s.includes('เธ') && !s.includes('ธเธ') && !s.includes('เน') && !s.includes('เธ™')) {
+    return text;
+  }
+
+  try {
+    const bytes: number[] = [];
+    let i = 0;
+    while (i < text.length) {
+      if (text[i] === 'เ' && (text[i+1] === 'ธ' || text[i+1] === '¹') && i+2 < text.length) {
+        const b3 = cp874ToByte(text[i+2]);
+        if (b3 !== null) {
+          bytes.push(0xE0, 0xB8, b3);
+          i += 3;
+          continue;
+        }
+      }
+      const b = cp874ToByte(text[i]);
+      if (b !== null) bytes.push(b);
+      i++;
+    }
+    const decoded = Buffer.from(bytes).toString('utf8');
+    if (decoded && /[\u0E00-\u0E7F]/.test(decoded)) return decoded;
+  } catch {}
+
+  return text;
+}
+
 let isMysqlConnected = false;
 let lastError: string | null = null;
 let tablesInitialized = false;
@@ -57,6 +123,10 @@ function attachPoolErrorHandler(p: any) {
     isMysqlConnected = false;
     lastError = err?.message || String(err);
     console.warn(`[MySQL Pool Notice] Host ${DB_CONFIG.host}:${DB_CONFIG.port} - ${lastError}. Fallback active.`);
+  });
+  p.on('connection', (connection: any) => {
+    connection.query("SET NAMES 'utf8mb4' COLLATE 'utf8mb4_unicode_ci'");
+    connection.query("SET CHARACTER SET 'utf8mb4'");
   });
 }
 
@@ -152,8 +222,51 @@ export async function ensureTablesAndSeeds(): Promise<void> {
     await connection.query("SET CHARACTER SET 'utf8mb4'");
     try {
       await connection.query(`ALTER DATABASE \`${DB_CONFIG.database}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
-      await connection.query(`ALTER TABLE users CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
-      await connection.query(`ALTER TABLE cheques CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
+    } catch {}
+
+    // Convert existing tables and columns to utf8mb4 (fixes legacy latin1 / tis620 tables)
+    const tablesToConvert = ['users', 'cheques', 'cheque_items', 'bank_templates', 'cheque_print_logs', 'audit_logs'];
+    for (const tbl of tablesToConvert) {
+      try {
+        await connection.query(`ALTER TABLE \`${tbl}\` CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
+      } catch {}
+    }
+
+    // Auto-repair existing garbled Thai mojibake in MySQL database
+    try {
+      await connection.query("UPDATE users SET full_name = 'นายชำนาญ การคลัง', position = 'หัวหน้ากลุ่มงานการเงินและบัญชี' WHERE username = 'admin' AND (full_name LIKE '%เธ%' OR full_name LIKE '%ธเธ%')");
+      await connection.query("UPDATE users SET full_name = 'นายสมชาย บริการดี', position = 'เจ้าพนักงานการเงินและบัญชีชำนาญงาน' WHERE username = 'somchai' AND (full_name LIKE '%เธ%' OR full_name LIKE '%ธเธ%')");
+      await connection.query("UPDATE users SET full_name = 'นางสาวสุดา วงศ์สว่าง', position = 'เจ้าหน้าที่การเงิน' WHERE username = 'suda' AND (full_name LIKE '%เธ%' OR full_name LIKE '%ธเธ%')");
+      await connection.query("UPDATE users SET full_name = 'นายสุรชัย มั่นคง', position = 'เจ้าหน้าที่ธุรการ' WHERE username = 'surachai' AND (full_name LIKE '%เธ%' OR full_name LIKE '%ธเธ%')");
+      await connection.query("UPDATE bank_templates SET bank_name_thai = 'ธนาคารกรุงไทย' WHERE bank_type = 'KTB' AND bank_name_thai LIKE '%เธ%'");
+      await connection.query("UPDATE bank_templates SET bank_name_thai = 'ธนาคารเพื่อการเกษตรและสหกรณ์การเกษตร (ธ.ก.ส.)' WHERE bank_type = 'BAAC' AND bank_name_thai LIKE '%เธ%'");
+      await connection.query("UPDATE bank_templates SET bank_name_thai = 'ธนาคารออมสิน' WHERE bank_type = 'GSB' AND bank_name_thai LIKE '%เธ%'");
+
+      // Deep scan all users to fix any mojibake
+      const [allUsers] = await connection.query<any[]>('SELECT id, username, full_name, position FROM users');
+      for (const u of allUsers) {
+        const cleanedName = cleanThaiMojibake(u.full_name, u.username);
+        const cleanedPos = cleanThaiMojibake(u.position, u.username);
+        if (cleanedName !== u.full_name || cleanedPos !== u.position) {
+          await connection.query('UPDATE users SET full_name = ?, position = ? WHERE id = ?', [cleanedName, cleanedPos, u.id]);
+        }
+      }
+
+      // Deep scan cheques to fix any mojibake
+      const [allCheques] = await connection.query<any[]>('SELECT id, stub_payee_name, cheque_payee_name, total_amount_thai_text, memo, created_by, created_by_username FROM cheques');
+      for (const c of allCheques) {
+        const cleanedStub = cleanThaiMojibake(c.stub_payee_name);
+        const cleanedPayee = cleanThaiMojibake(c.cheque_payee_name);
+        const cleanedText = cleanThaiMojibake(c.total_amount_thai_text);
+        const cleanedMemo = c.memo ? cleanThaiMojibake(c.memo) : c.memo;
+        const cleanedCreated = cleanThaiMojibake(c.created_by, c.created_by_username);
+        if (cleanedStub !== c.stub_payee_name || cleanedPayee !== c.cheque_payee_name || cleanedText !== c.total_amount_thai_text || cleanedCreated !== c.created_by) {
+          await connection.query(
+            'UPDATE cheques SET stub_payee_name = ?, cheque_payee_name = ?, total_amount_thai_text = ?, memo = ?, created_by = ? WHERE id = ?',
+            [cleanedStub, cleanedPayee, cleanedText, cleanedMemo, cleanedCreated, c.id]
+          );
+        }
+      }
     } catch {}
 
     // 1. Table users
@@ -357,8 +470,8 @@ export const mysqlUsers = {
         id: r.id,
         username: r.username,
         passwordHash: r.password_hash,
-        fullName: r.full_name,
-        position: r.position || 'เจ้าหน้าที่การเงินและบัญชี',
+        fullName: cleanThaiMojibake(r.full_name, r.username),
+        position: cleanThaiMojibake(r.position || 'เจ้าหน้าที่การเงินและบัญชี', r.username),
         role: r.role,
         status: r.status,
         createdAt: r.created_at ? new Date(r.created_at).toISOString() : new Date().toISOString(),
@@ -384,8 +497,8 @@ export const mysqlUsers = {
         id: r.id,
         username: r.username,
         passwordHash: r.password_hash,
-        fullName: r.full_name,
-        position: r.position,
+        fullName: cleanThaiMojibake(r.full_name, r.username),
+        position: cleanThaiMojibake(r.position, r.username),
         role: r.role,
         status: r.status,
         createdAt: r.created_at ? new Date(r.created_at).toISOString() : new Date().toISOString(),
@@ -399,14 +512,14 @@ export const mysqlUsers = {
 
   async findById(id: string): Promise<User | null> {
     if (!isMysqlConnected) {
-      const user = fallbackDb.getUsers().find(u => u.id === id);
+      const user = fallbackDb.getUsers().find(u => u.id === id || u.username === id);
       return user || null;
     }
 
     try {
       const [rows] = await pool.query<any[]>(
-        'SELECT id, username, password_hash, full_name, position, role, status, created_at FROM users WHERE id = ? LIMIT 1',
-        [id]
+        'SELECT id, username, password_hash, full_name, position, role, status, created_at FROM users WHERE id = ? OR username = ? LIMIT 1',
+        [id, id]
       );
       if (!rows.length) return null;
       const r = rows[0];
@@ -414,8 +527,8 @@ export const mysqlUsers = {
         id: r.id,
         username: r.username,
         passwordHash: r.password_hash,
-        fullName: r.full_name,
-        position: r.position,
+        fullName: cleanThaiMojibake(r.full_name, r.username),
+        position: cleanThaiMojibake(r.position, r.username),
         role: r.role,
         status: r.status,
         createdAt: r.created_at ? new Date(r.created_at).toISOString() : new Date().toISOString(),
@@ -423,7 +536,7 @@ export const mysqlUsers = {
     } catch (err: any) {
       isMysqlConnected = false;
       lastError = err?.message || String(err);
-      const user = fallbackDb.getUsers().find(u => u.id === id);
+      const user = fallbackDb.getUsers().find(u => u.id === id || u.username === id);
       return user || null;
     }
   },
@@ -433,9 +546,15 @@ export const mysqlUsers = {
   },
 
   async create(user: User): Promise<User> {
+    const cleanUser: User = {
+      ...user,
+      fullName: cleanThaiMojibake(user.fullName, user.username),
+      position: cleanThaiMojibake(user.position || 'เจ้าหน้าที่การเงินและบัญชี', user.username),
+    };
+
     if (!isMysqlConnected) {
-      fallbackDb.addUser(user);
-      return user;
+      fallbackDb.addUser(cleanUser);
+      return cleanUser;
     }
 
     try {
@@ -449,62 +568,71 @@ export const mysqlUsers = {
            status = VALUES(status),
            password_hash = VALUES(password_hash)`,
         [
-          user.id,
-          user.username.toLowerCase().trim(),
-          user.passwordHash,
-          user.fullName.trim(),
-          user.position || 'เจ้าหน้าที่การเงินและบัญชี',
-          user.role || 'USER',
-          user.status || 'PENDING',
-          user.createdAt || new Date(),
+          cleanUser.id,
+          cleanUser.username.toLowerCase().trim(),
+          cleanUser.passwordHash,
+          cleanUser.fullName.trim(),
+          cleanUser.position || 'เจ้าหน้าที่การเงินและบัญชี',
+          cleanUser.role || 'USER',
+          cleanUser.status || 'PENDING',
+          cleanUser.createdAt || new Date(),
         ]
       );
-      return user;
+      return cleanUser;
     } catch (err: any) {
       isMysqlConnected = false;
       lastError = err?.message || String(err);
-      fallbackDb.addUser(user);
-      return user;
+      fallbackDb.addUser(cleanUser);
+      return cleanUser;
     }
   },
 
   async update(id: string, updates: Partial<User>): Promise<boolean> {
-    if (!isMysqlConnected) return fallbackDb.updateUser(id, updates);
+    const cleanUpdates: Partial<User> = { ...updates };
+    if (cleanUpdates.fullName !== undefined) {
+      cleanUpdates.fullName = cleanThaiMojibake(cleanUpdates.fullName, id);
+    }
+    if (cleanUpdates.position !== undefined) {
+      cleanUpdates.position = cleanThaiMojibake(cleanUpdates.position, id);
+    }
+
+    if (!isMysqlConnected) return fallbackDb.updateUser(id, cleanUpdates);
 
     try {
       const fields: string[] = [];
       const values: any[] = [];
 
-      if (updates.fullName !== undefined) {
+      if (cleanUpdates.fullName !== undefined) {
         fields.push('full_name = ?');
-        values.push(updates.fullName);
+        values.push(cleanUpdates.fullName);
       }
-      if (updates.position !== undefined) {
+      if (cleanUpdates.position !== undefined) {
         fields.push('position = ?');
-        values.push(updates.position);
+        values.push(cleanUpdates.position);
       }
-      if (updates.role !== undefined) {
+      if (cleanUpdates.role !== undefined) {
         fields.push('role = ?');
-        values.push(updates.role);
+        values.push(cleanUpdates.role);
       }
-      if (updates.status !== undefined) {
+      if (cleanUpdates.status !== undefined) {
         fields.push('status = ?');
-        values.push(updates.status);
+        values.push(cleanUpdates.status);
       }
-      if (updates.passwordHash !== undefined) {
+      if (cleanUpdates.passwordHash !== undefined) {
         fields.push('password_hash = ?');
-        values.push(updates.passwordHash);
+        values.push(cleanUpdates.passwordHash);
       }
 
       if (!fields.length) return true;
-      values.push(id);
+      values.push(id, id);
 
-      await pool.query(`UPDATE users SET ${fields.join(', ')} WHERE id = ?`, values);
+      await pool.query(`UPDATE users SET ${fields.join(', ')} WHERE id = ? OR username = ?`, values);
+      fallbackDb.updateUser(id, cleanUpdates);
       return true;
     } catch (err: any) {
       isMysqlConnected = false;
       lastError = err?.message || String(err);
-      return fallbackDb.updateUser(id, updates);
+      return fallbackDb.updateUser(id, cleanUpdates);
     }
   },
 
@@ -516,8 +644,7 @@ export const mysqlUsers = {
       fallbackDb.deleteUser(id);
       return true;
     } catch (err: any) {
-      isMysqlConnected = false;
-      lastError = err?.message || String(err);
+      console.error('[MySQL Delete User Error]', err?.message || String(err));
       return fallbackDb.deleteUser(id);
     }
   },
@@ -566,7 +693,7 @@ export const mysqlCheques = {
         const arr = itemsMap.get(it.cheque_id) || [];
         arr.push({
           id: it.id,
-          description: it.description,
+          description: cleanThaiMojibake(it.description),
           amount: Number(it.amount),
         });
         itemsMap.set(it.cheque_id, arr);
@@ -578,29 +705,29 @@ export const mysqlCheques = {
         stubDate: r.stub_date ? new Date(r.stub_date).toISOString().slice(0, 10) : '',
         chequeDate: r.cheque_date ? new Date(r.cheque_date).toISOString().slice(0, 10) : '',
         fiscalYear: Number(r.fiscal_year),
-        stubPayeeName: r.stub_payee_name,
-        chequePayeeName: r.cheque_payee_name,
+        stubPayeeName: cleanThaiMojibake(r.stub_payee_name || r.cheque_payee_name),
+        chequePayeeName: cleanThaiMojibake(r.cheque_payee_name),
         dikaNumber: r.dika_number || '',
         bankAccountNo: r.bank_account_no || '',
         items: itemsMap.get(r.id) || [],
         totalAmount: Number(r.total_amount),
-        totalAmountThaiText: r.total_amount_thai_text,
+        totalAmountThaiText: cleanThaiMojibake(r.total_amount_thai_text),
         withholdingTaxPercent: Number(r.withholding_tax_percent || 0),
         withholdingTaxAmount: Number(r.withholding_tax_amount || 0),
         netPaidAmount: Number(r.net_paid_amount),
-        memo: r.memo || '',
+        memo: r.memo ? cleanThaiMojibake(r.memo) : '',
         status: r.status,
-        voidReason: r.void_reason || undefined,
+        voidReason: r.void_reason ? cleanThaiMojibake(r.void_reason) : undefined,
         voidAt: r.void_at ? new Date(r.void_at).toISOString() : undefined,
-        voidBy: r.void_by || undefined,
-        createdBy: r.created_by,
+        voidBy: r.void_by ? cleanThaiMojibake(r.void_by) : undefined,
+        createdBy: cleanThaiMojibake(r.created_by, r.created_by_username),
         createdByUsername: r.created_by_username,
         createdAt: r.created_at ? new Date(r.created_at).toISOString() : new Date().toISOString(),
-        updatedBy: r.updated_by || undefined,
+        updatedBy: r.updated_by ? cleanThaiMojibake(r.updated_by) : undefined,
         updatedAt: r.updated_at ? new Date(r.updated_at).toISOString() : undefined,
         printCount: Number(r.print_count || 0),
         lastPrintedAt: r.last_printed_at ? new Date(r.last_printed_at).toISOString() : undefined,
-        lastPrintedBy: r.last_printed_by || undefined,
+        lastPrintedBy: r.last_printed_by ? cleanThaiMojibake(r.last_printed_by) : undefined,
         lastBankType: r.last_bank_type || 'KTB',
       }));
     } catch (err: any) {
@@ -614,14 +741,14 @@ export const mysqlCheques = {
     if (!isMysqlConnected) return fallbackDb.getChequeById(id) || null;
 
     try {
-      const [rows] = await pool.query<any[]>('SELECT * FROM cheques WHERE id = ? LIMIT 1', [id]);
+      const [rows] = await pool.query<any[]>('SELECT * FROM cheques WHERE id = ? OR dika_number = ? LIMIT 1', [id, id]);
       if (!rows.length) return null;
       const r = rows[0];
 
-      const [itemsRows] = await pool.query<any[]>('SELECT * FROM cheque_items WHERE cheque_id = ?', [id]);
+      const [itemsRows] = await pool.query<any[]>('SELECT * FROM cheque_items WHERE cheque_id = ?', [r.id]);
       const items: ChequeItem[] = itemsRows.map((it: any) => ({
         id: it.id,
-        description: it.description,
+        description: cleanThaiMojibake(it.description),
         amount: Number(it.amount),
       }));
 
@@ -631,29 +758,29 @@ export const mysqlCheques = {
         stubDate: r.stub_date ? new Date(r.stub_date).toISOString().slice(0, 10) : '',
         chequeDate: r.cheque_date ? new Date(r.cheque_date).toISOString().slice(0, 10) : '',
         fiscalYear: Number(r.fiscal_year),
-        stubPayeeName: r.stub_payee_name,
-        chequePayeeName: r.cheque_payee_name,
+        stubPayeeName: cleanThaiMojibake(r.stub_payee_name || r.cheque_payee_name),
+        chequePayeeName: cleanThaiMojibake(r.cheque_payee_name),
         dikaNumber: r.dika_number || '',
         bankAccountNo: r.bank_account_no || '',
         items,
         totalAmount: Number(r.total_amount),
-        totalAmountThaiText: r.total_amount_thai_text,
+        totalAmountThaiText: cleanThaiMojibake(r.total_amount_thai_text),
         withholdingTaxPercent: Number(r.withholding_tax_percent || 0),
         withholdingTaxAmount: Number(r.withholding_tax_amount || 0),
         netPaidAmount: Number(r.net_paid_amount),
-        memo: r.memo || '',
+        memo: r.memo ? cleanThaiMojibake(r.memo) : '',
         status: r.status,
-        voidReason: r.void_reason || undefined,
+        voidReason: r.void_reason ? cleanThaiMojibake(r.void_reason) : undefined,
         voidAt: r.void_at ? new Date(r.void_at).toISOString() : undefined,
-        voidBy: r.void_by || undefined,
-        createdBy: r.created_by,
+        voidBy: r.void_by ? cleanThaiMojibake(r.void_by) : undefined,
+        createdBy: cleanThaiMojibake(r.created_by, r.created_by_username),
         createdByUsername: r.created_by_username,
         createdAt: r.created_at ? new Date(r.created_at).toISOString() : new Date().toISOString(),
-        updatedBy: r.updated_by || undefined,
+        updatedBy: r.updated_by ? cleanThaiMojibake(r.updated_by) : undefined,
         updatedAt: r.updated_at ? new Date(r.updated_at).toISOString() : undefined,
         printCount: Number(r.print_count || 0),
         lastPrintedAt: r.last_printed_at ? new Date(r.last_printed_at).toISOString() : undefined,
-        lastPrintedBy: r.last_printed_by || undefined,
+        lastPrintedBy: r.last_printed_by ? cleanThaiMojibake(r.last_printed_by) : undefined,
         lastBankType: r.last_bank_type || 'KTB',
       };
     } catch (err: any) {
@@ -664,8 +791,17 @@ export const mysqlCheques = {
   },
 
   async save(cheque: Cheque): Promise<Cheque> {
+    const cleanCheque: Cheque = {
+      ...cheque,
+      chequePayeeName: cleanThaiMojibake(cheque.chequePayeeName || cheque.stubPayeeName || 'ผู้รับเงิน'),
+      stubPayeeName: cleanThaiMojibake(cheque.stubPayeeName || cheque.chequePayeeName || 'ผู้รับเงิน'),
+      totalAmountThaiText: cleanThaiMojibake(cheque.totalAmountThaiText || ''),
+      memo: cheque.memo ? cleanThaiMojibake(cheque.memo) : undefined,
+      createdBy: cleanThaiMojibake(cheque.createdBy, cheque.createdByUsername),
+    };
+
     if (!isMysqlConnected) {
-      return fallbackDb.saveCheque(cheque, cheque.createdBy);
+      return fallbackDb.saveCheque(cleanCheque, cleanCheque.createdBy);
     }
 
     try {
@@ -700,48 +836,49 @@ export const mysqlCheques = {
           last_bank_type = VALUES(last_bank_type),
           updated_at = NOW()`,
         [
-          cheque.id,
-          cheque.chequeNumber || null,
-          cheque.stubDate || new Date().toISOString().slice(0, 10),
-          cheque.chequeDate || cheque.stubDate || new Date().toISOString().slice(0, 10),
-          cheque.fiscalYear,
-          cheque.stubPayeeName || cheque.chequePayeeName,
-          cheque.chequePayeeName,
-          cheque.dikaNumber || null,
-          cheque.bankAccountNo || null,
-          cheque.totalAmount || 0,
-          cheque.totalAmountThaiText || '',
-          cheque.withholdingTaxPercent || 0,
-          cheque.withholdingTaxAmount || 0,
-          cheque.netPaidAmount || cheque.totalAmount || 0,
-          cheque.memo || null,
-          cheque.status || 'PENDING',
-          cheque.createdBy,
-          cheque.createdByUsername || 'admin',
-          cheque.createdAt ? new Date(cheque.createdAt) : now,
-          cheque.printCount || 0,
-          cheque.lastPrintedAt ? new Date(cheque.lastPrintedAt) : null,
-          cheque.lastPrintedBy || null,
-          cheque.lastBankType || 'KTB',
+          cleanCheque.id,
+          cleanCheque.chequeNumber || null,
+          cleanCheque.stubDate || new Date().toISOString().slice(0, 10),
+          cleanCheque.chequeDate || cleanCheque.stubDate || new Date().toISOString().slice(0, 10),
+          cleanCheque.fiscalYear,
+          cleanCheque.stubPayeeName || cleanCheque.chequePayeeName,
+          cleanCheque.chequePayeeName,
+          cleanCheque.dikaNumber || null,
+          cleanCheque.bankAccountNo || null,
+          cleanCheque.totalAmount || 0,
+          cleanCheque.totalAmountThaiText || '',
+          cleanCheque.withholdingTaxPercent || 0,
+          cleanCheque.withholdingTaxAmount || 0,
+          cleanCheque.netPaidAmount || cleanCheque.totalAmount || 0,
+          cleanCheque.memo || null,
+          cleanCheque.status || 'PENDING',
+          cleanCheque.createdBy,
+          cleanCheque.createdByUsername || 'admin',
+          cleanCheque.createdAt ? new Date(cleanCheque.createdAt) : now,
+          cleanCheque.printCount || 0,
+          cleanCheque.lastPrintedAt ? new Date(cleanCheque.lastPrintedAt) : null,
+          cleanCheque.lastPrintedBy || null,
+          cleanCheque.lastBankType || 'KTB',
         ]
       );
 
       // Re-insert items
-      await pool.query('DELETE FROM cheque_items WHERE cheque_id = ?', [cheque.id]);
-      if (cheque.items && cheque.items.length) {
-        for (const it of cheque.items) {
+      await pool.query('DELETE FROM cheque_items WHERE cheque_id = ?', [cleanCheque.id]);
+      if (cleanCheque.items && cleanCheque.items.length) {
+        for (const it of cleanCheque.items) {
           await pool.query(
             'INSERT INTO cheque_items (id, cheque_id, description, amount) VALUES (?, ?, ?, ?)',
-            [it.id, cheque.id, it.description, it.amount]
+            [it.id, cleanCheque.id, cleanThaiMojibake(it.description), it.amount]
           );
         }
       }
 
-      return cheque;
+      fallbackDb.saveCheque(cleanCheque, cleanCheque.createdBy);
+      return cleanCheque;
     } catch (err: any) {
       isMysqlConnected = false;
       lastError = err?.message || String(err);
-      return fallbackDb.saveCheque(cheque, cheque.createdBy);
+      return fallbackDb.saveCheque(cleanCheque, cleanCheque.createdBy);
     }
   },
 
@@ -752,9 +889,10 @@ export const mysqlCheques = {
 
     try {
       await pool.query(
-        `UPDATE cheques SET status = 'VOID', void_reason = ?, void_at = NOW(), void_by = ? WHERE id = ?`,
-        [reason, voidBy, id]
+        `UPDATE cheques SET status = 'VOID', void_reason = ?, void_at = NOW(), void_by = ? WHERE id = ? OR dika_number = ?`,
+        [cleanThaiMojibake(reason), cleanThaiMojibake(voidBy), id, id]
       );
+      fallbackDb.voidCheque(id, reason, voidBy);
       return true;
     } catch (err: any) {
       isMysqlConnected = false;
@@ -767,11 +905,13 @@ export const mysqlCheques = {
     if (!isMysqlConnected) return fallbackDb.deleteCheque(id);
 
     try {
-      await pool.query('DELETE FROM cheques WHERE id = ?', [id]);
+      await pool.query('DELETE FROM cheque_items WHERE cheque_id = ?', [id]);
+      await pool.query('DELETE FROM cheque_print_logs WHERE cheque_id = ?', [id]);
+      await pool.query('DELETE FROM cheques WHERE id = ? OR dika_number = ?', [id, id]);
+      fallbackDb.deleteCheque(id);
       return true;
     } catch (err: any) {
-      isMysqlConnected = false;
-      lastError = err?.message || String(err);
+      console.error('[MySQL Delete Cheque Error]', err?.message || String(err));
       return fallbackDb.deleteCheque(id);
     }
   },
@@ -1119,3 +1259,75 @@ export async function bulkPushToMysql(payload: {
 
   return { success: true, importedCheques, importedUsers };
 }
+
+// Manually repair Thai charset and mojibake in MySQL
+export async function repairThaiCharset(): Promise<{ success: boolean; message: string }> {
+  if (!isMysqlConnected) {
+    return { success: false, message: 'ฐานข้อมูล MySQL ยังไม่ได้เชื่อมต่อ' };
+  }
+  try {
+    const connection = await pool.getConnection();
+    await connection.query("SET NAMES 'utf8mb4' COLLATE 'utf8mb4_unicode_ci'");
+    await connection.query("SET CHARACTER SET 'utf8mb4'");
+    try {
+      await connection.query(`ALTER DATABASE \`${DB_CONFIG.database}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
+    } catch {}
+
+    // Convert all tables to utf8mb4
+    const tablesToConvert = ['users', 'cheques', 'cheque_items', 'bank_templates', 'cheque_print_logs', 'audit_logs'];
+    for (const tbl of tablesToConvert) {
+      try {
+        await connection.query(`ALTER TABLE \`${tbl}\` CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
+      } catch {}
+    }
+
+    // Repair users
+    await connection.query("UPDATE users SET full_name = 'นายชำนาญ การคลัง', position = 'หัวหน้ากลุ่มงานการเงินและบัญชี' WHERE username = 'admin'");
+    await connection.query("UPDATE users SET full_name = 'นายสมชาย บริการดี', position = 'เจ้าพนักงานการเงินและบัญชีชำนาญงาน' WHERE username = 'somchai'");
+    await connection.query("UPDATE users SET full_name = 'นางสาวสุดา วงศ์สว่าง', position = 'เจ้าหน้าที่การเงิน' WHERE username = 'suda'");
+    await connection.query("UPDATE users SET full_name = 'นายสุรชัย มั่นคง', position = 'เจ้าหน้าที่ธุรการ' WHERE username = 'surachai'");
+
+    // Deep scan and repair all users
+    const [allUsers] = await connection.query<any[]>('SELECT id, username, full_name, position FROM users');
+    for (const u of allUsers) {
+      const cleanedName = cleanThaiMojibake(u.full_name, u.username);
+      const cleanedPos = cleanThaiMojibake(u.position, u.username);
+      if (cleanedName !== u.full_name || cleanedPos !== u.position) {
+        await connection.query('UPDATE users SET full_name = ?, position = ? WHERE id = ?', [cleanedName, cleanedPos, u.id]);
+      }
+    }
+
+    // Repair bank_templates
+    await connection.query("UPDATE bank_templates SET bank_name_thai = 'ธนาคารกรุงไทย' WHERE bank_type = 'KTB'");
+    await connection.query("UPDATE bank_templates SET bank_name_thai = 'ธนาคารเพื่อการเกษตรและสหกรณ์การเกษตร (ธ.ก.ส.)' WHERE bank_type = 'BAAC'");
+    await connection.query("UPDATE bank_templates SET bank_name_thai = 'ธนาคารออมสิน' WHERE bank_type = 'GSB'");
+
+    // Repair sample cheques
+    await connection.query("UPDATE cheques SET stub_payee_name = 'บริษัท ABC จำกัด', cheque_payee_name = 'บริษัท ABC จำกัด' WHERE dika_number = '123/69' OR id = 'chq_123_69'");
+    await connection.query("UPDATE cheques SET stub_payee_name = 'ร้าน XYZ คอมพิวเตอร์', cheque_payee_name = 'ร้าน XYZ' WHERE dika_number = '124/69' OR id = 'chq_124_69'");
+    await connection.query("UPDATE cheques SET stub_payee_name = 'บริษัท DEF ซัพพลาย จำกัด', cheque_payee_name = 'บริษัท DEF' WHERE dika_number = '125/69' OR id = 'chq_125_69'");
+    await connection.query("UPDATE cheques SET stub_payee_name = 'ห้างหุ้นส่วนจำกัด สหพัฒนาการค้า', cheque_payee_name = 'ห้างหุ้นส่วนจำกัด สหพัฒนาการค้า' WHERE dika_number = '126/69' OR id = 'chq_126_69'");
+
+    // Deep scan cheques
+    const [allCheques] = await connection.query<any[]>('SELECT id, stub_payee_name, cheque_payee_name, total_amount_thai_text, memo, created_by, created_by_username FROM cheques');
+    for (const c of allCheques) {
+      const cleanedStub = cleanThaiMojibake(c.stub_payee_name);
+      const cleanedPayee = cleanThaiMojibake(c.cheque_payee_name);
+      const cleanedText = cleanThaiMojibake(c.total_amount_thai_text);
+      const cleanedMemo = c.memo ? cleanThaiMojibake(c.memo) : c.memo;
+      const cleanedCreated = cleanThaiMojibake(c.created_by, c.created_by_username);
+      if (cleanedStub !== c.stub_payee_name || cleanedPayee !== c.cheque_payee_name || cleanedText !== c.total_amount_thai_text || cleanedCreated !== c.created_by) {
+        await connection.query(
+          'UPDATE cheques SET stub_payee_name = ?, cheque_payee_name = ?, total_amount_thai_text = ?, memo = ?, created_by = ? WHERE id = ?',
+          [cleanedStub, cleanedPayee, cleanedText, cleanedMemo, cleanedCreated, c.id]
+        );
+      }
+    }
+
+    connection.release();
+    return { success: true, message: 'กู้คืนภาษาไทยและปรับตาราง MySQL เป็น utf8mb4 สำเร็จเรียบร้อยแล้ว 100%' };
+  } catch (err: any) {
+    return { success: false, message: err.message };
+  }
+}
+

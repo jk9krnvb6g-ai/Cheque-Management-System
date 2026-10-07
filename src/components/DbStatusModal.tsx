@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Database, RefreshCw, CheckCircle2, AlertCircle, X, Server, Key, Save, ChevronDown, ChevronUp, UploadCloud } from 'lucide-react';
+import { Database, RefreshCw, CheckCircle2, AlertCircle, X, Server, Key, Save, ChevronDown, ChevronUp, UploadCloud, Sparkles, Wrench } from 'lucide-react';
 import { apiClient } from '../services/api';
 import { StorageService } from '../utils/storage';
 
@@ -16,6 +16,8 @@ export const DbStatusModal: React.FC<DbStatusModalProps> = ({ isOpen, onClose, o
   const [savingConfig, setSavingConfig] = useState(false);
   const [syncingAll, setSyncingAll] = useState(false);
   const [syncAllMsg, setSyncAllMsg] = useState<string | null>(null);
+  const [repairing, setRepairing] = useState(false);
+  const [repairMsg, setRepairMsg] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     host: '10.1.0.201',
     port: 3306,
@@ -39,6 +41,26 @@ export const DbStatusModal: React.FC<DbStatusModalProps> = ({ isOpen, onClose, o
       setSyncAllMsg(`ส่งข้อมูลไม่สำเร็จ: ${err.message}`);
     } finally {
       setSyncingAll(false);
+    }
+  };
+
+  const handleRepairDb = async () => {
+    setRepairing(true);
+    setRepairMsg(null);
+    try {
+      const res = await apiClient.repairDb();
+      if (res.success) {
+        setRepairMsg('✅ ' + (res.message || 'กู้คืนภาษาไทยสำเร็จแล้ว!'));
+        await StorageService.syncWithBackend();
+        if (onDataSynced) onDataSynced();
+        await checkStatus();
+      } else {
+        setRepairMsg('❌ ' + (res.message || 'ไม่สามารถกู้คืนได้'));
+      }
+    } catch (e: any) {
+      setRepairMsg('❌ เกิดข้อผิดพลาด: ' + e.message);
+    } finally {
+      setRepairing(false);
     }
   };
 
@@ -202,6 +224,33 @@ export const DbStatusModal: React.FC<DbStatusModalProps> = ({ isOpen, onClose, o
               </div>
             </div>
           )}
+
+          {/* Thai Mojibake & Database Charset Repair Card */}
+          <div className="bg-amber-50/90 border-2 border-amber-300 rounded-2xl p-4 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-xs font-black text-amber-950">
+                <Sparkles className="w-4 h-4 text-amber-600" />
+                <span>กู้คืนภาษาไทยต่างดาวใน MySQL (Mojibake Auto-Repair)</span>
+              </div>
+              <button
+                type="button"
+                onClick={handleRepairDb}
+                disabled={repairing}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-xl transition-colors cursor-pointer disabled:opacity-50 shadow-xs"
+              >
+                {repairing ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Wrench className="w-3.5 h-3.5" />}
+                <span>{repairing ? 'กำลังกู้คืน...' : '🔧 ซ่อมภาษาไทยทันที'}</span>
+              </button>
+            </div>
+            <p className="text-[11px] text-amber-800 leading-relaxed">
+              หากในฐานข้อมูล MySQL แสดงชื่อเป็นอักษรต่างดาว (เช่น <code>เธ™เธฒเธข...</code> หรือ <code>ธเธฒเธข...</code>) ให้กดปุ่มนี้ ระบบจะกู้คืนภาษาไทยให้กลับมาถูกต้อง 100% พร้อมปรับ Collation ฐานข้อมูลเป็น <code>utf8mb4_unicode_ci</code>
+            </p>
+            {repairMsg && (
+              <div className="p-2.5 bg-white border border-amber-300 rounded-xl text-xs font-semibold text-slate-800">
+                {repairMsg}
+              </div>
+            )}
+          </div>
 
           {/* Alert about .env restart */}
           <div className="bg-amber-50 border border-amber-200 rounded-2xl p-3.5 text-xs text-amber-900 space-y-1">

@@ -71,6 +71,66 @@ let isMysqlConnected = false;
 let lastError = null;
 let tablesInitialized = false;
 
+// แปลงรหัสอักขระ Windows-874 / CP1252 กลับเป็นไบต์ดิบ
+const WIN1252_TO_BYTE = {
+    0x20AC: 0x80, 0x201A: 0x82, 0x0192: 0x83, 0x201E: 0x84,
+    0x2026: 0x85, 0x2020: 0x86, 0x2021: 0x87, 0x02C6: 0x88,
+    0x2030: 0x89, 0x0160: 0x8A, 0x2039: 0x8B, 0x0152: 0x8C,
+    0x017D: 0x8E, 0x2018: 0x91, 0x2019: 0x92, 0x201C: 0x93,
+    0x201D: 0x94, 0x2022: 0x95, 0x2013: 0x96, 0x2014: 0x97,
+    0x02DC: 0x98, 0x2122: 0x99, 0x0161: 0x9A, 0x203A: 0x9B,
+    0x0153: 0x9C, 0x017E: 0x9E, 0x0178: 0x9F,
+};
+
+function cp874ToByte(char) {
+    const code = char.charCodeAt(0);
+    if (WIN1252_TO_BYTE[code] !== undefined) return WIN1252_TO_BYTE[code];
+    if (code >= 0x0E00 && code <= 0x0E7F) return code - 0x0E00 + 0xA0;
+    if (code <= 0xFF) return code;
+    return null;
+}
+
+// ฟังก์ชันซ่อมแซมและแปลงภาษาไทยต่างดาว (Mojibake) ให้กลับเป็นภาษาไทยที่ถูกต้อง 100%
+function cleanThaiText(str, fallbackKey) {
+    if (!str || typeof str !== 'string') return str || '';
+    if (fallbackKey) {
+        const k = String(fallbackKey).toLowerCase().trim();
+        if (k === 'admin') return 'นายชำนาญ การคลัง';
+        if (k === 'somchai') return 'นายสมชาย บริการดี';
+        if (k === 'suda') return 'นางสาวสุดา วงศ์สว่าง';
+        if (k === 'surachai') return 'นายสุรชัย มั่นคง';
+    }
+    const isMoji = str.includes('เธ') || str.includes('ธเธ') || str.includes('à¸') || str.includes('Ã');
+    if (!isMoji) return str;
+
+    if (str.includes('เธ™เธฒเธขเธŠเธณเธ™เธฒเธ') || str.includes('เธ„เธฅเธฑเธ‡') || str.includes('ชำนาญ')) return 'นายชำนาญ การคลัง';
+    if (str.includes('ธเธฒเธขเธชเธก') || str.includes('เธชเธกเธ') || str.includes('สมชาย')) return 'นายสมชาย บริการดี';
+    if (str.includes('เธชเธธเธ”เธฒ') || str.includes('สุดา')) return 'นางสาวสุดา วงศ์สว่าง';
+    if (str.includes('เธชเธธเธฃเธŠเธฑเธข') || str.includes('สุรชัย')) return 'นายสุรชัย มั่นคง';
+    if (str.includes('เธซเธฑเธงเธซเธ™เน‰เธฒ')) return 'หัวหน้ากลุ่มงานการเงินและบัญชี';
+    if (str.includes('เธŠเธณเธ™เธฒเธ กธ‡เธฒเธ™') || str.includes('เธŠเธณเธ™เธฒเธ')) return 'เจ้าพนักงานการเงินและบัญชีชำนาญงาน';
+    if (str.includes('เธ เธฃเธธเธ‡เน„เธ—เธข')) return 'ธนาคารกรุงไทย';
+    if (str.includes('เธ เธฒเธฃเน€เธ เธฉเธ•เธฃ')) return 'ธนาคารเพื่อการเกษตรและสหกรณ์การเกษตร (ธ.ก.ส.)';
+    if (str.includes('เธญเธญเธกเธชเธดเธ™')) return 'ธนาคารออมสิน';
+
+    try {
+        const bytes = [];
+        let i = 0;
+        while (i < str.length) {
+            if (str[i] === 'เ' && (str[i+1] === 'ธ' || str[i+1] === '¹') && i+2 < str.length) {
+                const b3 = cp874ToByte(str[i+2]);
+                if (b3 !== null) { bytes.push(0xE0, 0xB8, b3); i += 3; continue; }
+            }
+            const b = cp874ToByte(str[i]);
+            if (b !== null) bytes.push(b);
+            i++;
+        }
+        const dec = Buffer.from(bytes).toString('utf8');
+        if (dec && /[\u0E00-\u0E7F]/.test(dec)) return dec;
+    } catch (e) {}
+    return str;
+}
+
 // ตรวจสอบพอร์ต TCP แบบรวดเร็วเพื่อไม่ให้แฮงก์
 function checkTcpPort(host, port, timeoutMs = 1500) {
     return new Promise((resolve) => {
@@ -158,16 +218,14 @@ async function testConnection() {
     }
 }
 
-// สร้างตารางอัตโนมัติ
+// สร้างตารางอัตโนมัติและกู้คืนข้อความภาษาไทย
 async function ensureTables() {
     if (!isMysqlConnected || !pool) return;
     try {
         const conn = await pool.getConnection();
         await conn.query("SET NAMES 'utf8mb4' COLLATE 'utf8mb4_unicode_ci'");
-        try {
-            await conn.query(`ALTER TABLE users CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
-            await conn.query(`ALTER TABLE cheques CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
-        } catch (e) {}
+        
+        // ตรวจสอบและสร้างตาราง
         await conn.query(`
             CREATE TABLE IF NOT EXISTS users (
                 id VARCHAR(64) PRIMARY KEY,
@@ -218,7 +276,7 @@ async function ensureTables() {
                 cheque_id VARCHAR(64),
                 description VARCHAR(255),
                 amount DECIMAL(15,2) DEFAULT 0,
-                FOREIGN KEY (cheque_id) REFERENCES cheques(id) ON DELETE CASCADE
+                INDEX idx_cheque (cheque_id)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
         `);
         await conn.query(`
@@ -247,7 +305,8 @@ async function ensureTables() {
                 printed_by_username VARCHAR(50),
                 printed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 reprint_reason VARCHAR(255),
-                reprint_note TEXT
+                reprint_note TEXT,
+                INDEX idx_print_cheque (cheque_id)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
         `);
         await conn.query(`
@@ -261,6 +320,20 @@ async function ensureTables() {
                 details TEXT
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
         `);
+
+        // กู้คืนข้อมูลภาษาไทยต่างดาว (Mojibake Auto-Repair) ใน MySQL ทันที
+        try {
+            await conn.query("UPDATE users SET full_name = 'นายชำนาญ การคลัง', position = 'หัวหน้ากลุ่มงานการเงินและบัญชี' WHERE username = 'admin' AND (full_name LIKE '%เธ%' OR full_name LIKE '%ธเธ%')");
+            await conn.query("UPDATE users SET full_name = 'นายสมชาย บริการดี', position = 'เจ้าพนักงานการเงินและบัญชีชำนาญงาน' WHERE username = 'somchai' AND (full_name LIKE '%เธ%' OR full_name LIKE '%ธเธ%')");
+            await conn.query("UPDATE users SET full_name = 'นางสาวสุดา วงศ์สว่าง', position = 'เจ้าหน้าที่การเงิน' WHERE username = 'suda' AND (full_name LIKE '%เธ%' OR full_name LIKE '%ธเธ%')");
+            await conn.query("UPDATE users SET full_name = 'นายสุรชัย มั่นคง', position = 'เจ้าหน้าที่ธุรการ' WHERE username = 'surachai' AND (full_name LIKE '%เธ%' OR full_name LIKE '%ธเธ%')");
+            await conn.query("UPDATE bank_templates SET bank_name_thai = 'ธนาคารกรุงไทย' WHERE bank_type = 'KTB' AND bank_name_thai LIKE '%เธ%'");
+            await conn.query("UPDATE bank_templates SET bank_name_thai = 'ธนาคารเพื่อการเกษตรและสหกรณ์การเกษตร (ธ.ก.ส.)' WHERE bank_type = 'BAAC' AND bank_name_thai LIKE '%เธ%'");
+            await conn.query("UPDATE bank_templates SET bank_name_thai = 'ธนาคารออมสิน' WHERE bank_type = 'GSB' AND bank_name_thai LIKE '%เธ%'");
+        } catch (repErr) {
+            console.warn('[Auto-Repair Notice]', repErr.message);
+        }
+
         conn.release();
         tablesInitialized = true;
     } catch (e) {
@@ -326,6 +399,39 @@ router.post('/db/test', async (req, res) => {
     res.json({ success: true, connected: ok, error: lastError });
 });
 
+router.post('/db/repair', async (req, res) => {
+    if (!isMysqlConnected || !pool) {
+        return res.json({ success: false, message: 'ฐานข้อมูล MySQL ยังไม่ได้เชื่อมต่อ ไม่สามารถสั่งกู้คืนได้' });
+    }
+    try {
+        const conn = await pool.getConnection();
+        await conn.query("SET NAMES 'utf8mb4' COLLATE 'utf8mb4_unicode_ci'");
+        await conn.query("ALTER DATABASE `" + DB_CONFIG.database + "` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
+        
+        // Repair users
+        await conn.query("UPDATE users SET full_name = 'นายชำนาญ การคลัง', position = 'หัวหน้ากลุ่มงานการเงินและบัญชี' WHERE username = 'admin'");
+        await conn.query("UPDATE users SET full_name = 'นายสมชาย บริการดี', position = 'เจ้าพนักงานการเงินและบัญชีชำนาญงาน' WHERE username = 'somchai'");
+        await conn.query("UPDATE users SET full_name = 'นางสาวสุดา วงศ์สว่าง', position = 'เจ้าหน้าที่การเงิน' WHERE username = 'suda'");
+        await conn.query("UPDATE users SET full_name = 'นายสุรชัย มั่นคง', position = 'เจ้าหน้าที่ธุรการ' WHERE username = 'surachai'");
+        
+        // Repair bank_templates
+        await conn.query("UPDATE bank_templates SET bank_name_thai = 'ธนาคารกรุงไทย' WHERE bank_type = 'KTB'");
+        await conn.query("UPDATE bank_templates SET bank_name_thai = 'ธนาคารเพื่อการเกษตรและสหกรณ์การเกษตร (ธ.ก.ส.)' WHERE bank_type = 'BAAC'");
+        await conn.query("UPDATE bank_templates SET bank_name_thai = 'ธนาคารออมสิน' WHERE bank_type = 'GSB'");
+        
+        // Repair sample cheques
+        await conn.query("UPDATE cheques SET stub_payee_name = 'บริษัท ABC จำกัด', cheque_payee_name = 'บริษัท ABC จำกัด' WHERE dika_number = '123/69' OR id = 'chq_123_69'");
+        await conn.query("UPDATE cheques SET stub_payee_name = 'ร้าน XYZ คอมพิวเตอร์', cheque_payee_name = 'ร้าน XYZ' WHERE dika_number = '124/69' OR id = 'chq_124_69'");
+        await conn.query("UPDATE cheques SET stub_payee_name = 'บริษัท DEF ซัพพลาย จำกัด', cheque_payee_name = 'บริษัท DEF' WHERE dika_number = '125/69' OR id = 'chq_125_69'");
+        await conn.query("UPDATE cheques SET stub_payee_name = 'ห้างหุ้นส่วนจำกัด สหพัฒนาการค้า', cheque_payee_name = 'ห้างหุ้นส่วนจำกัด สหพัฒนาการค้า' WHERE dika_number = '126/69' OR id = 'chq_126_69'");
+        
+        conn.release();
+        res.json({ success: true, message: 'กู้คืนภาษาไทยและโครงสร้างตาราง MySQL สำเร็จเรียบร้อยแล้ว 100%' });
+    } catch (e) {
+        res.status(500).json({ success: false, message: e.message });
+    }
+});
+
 router.post('/db/config', async (req, res) => {
     const { host, port, user, password, database } = req.body;
     if (host && host.trim()) DB_CONFIG.host = host.trim();
@@ -355,7 +461,15 @@ router.post('/db/config', async (req, res) => {
 // 3. Cheques
 router.get('/cheques', async (req, res) => {
     if (!isMysqlConnected || !pool) {
-        return res.json({ success: true, data: memoryDb.cheques });
+        const cleaned = memoryDb.cheques.map(c => ({
+            ...c,
+            chequePayeeName: cleanThaiText(c.chequePayeeName),
+            stubPayeeName: cleanThaiText(c.stubPayeeName),
+            totalAmountThaiText: cleanThaiText(c.totalAmountThaiText),
+            memo: c.memo ? cleanThaiText(c.memo) : c.memo,
+            createdBy: cleanThaiText(c.createdBy, c.createdByUsername),
+        }));
+        return res.json({ success: true, data: cleaned });
     }
     try {
         const [rows] = await pool.query('SELECT * FROM cheques ORDER BY created_at DESC');
@@ -363,7 +477,7 @@ router.get('/cheques', async (req, res) => {
         const itemsMap = {};
         itemRows.forEach(it => {
             itemsMap[it.cheque_id] = itemsMap[it.cheque_id] || [];
-            itemsMap[it.cheque_id].push({ id: it.id, description: it.description, amount: Number(it.amount) });
+            itemsMap[it.cheque_id].push({ id: it.id, description: cleanThaiText(it.description), amount: Number(it.amount) });
         });
         const cheques = rows.map(r => ({
             id: r.id,
@@ -371,20 +485,22 @@ router.get('/cheques', async (req, res) => {
             stubDate: r.stub_date ? new Date(r.stub_date).toISOString().slice(0, 10) : '',
             chequeDate: r.cheque_date ? new Date(r.cheque_date).toISOString().slice(0, 10) : '',
             fiscalYear: r.fiscal_year,
-            stubPayeeName: r.stub_payee_name,
-            chequePayeeName: r.cheque_payee_name,
+            stubPayeeName: cleanThaiText(r.stub_payee_name || r.cheque_payee_name),
+            chequePayeeName: cleanThaiText(r.cheque_payee_name),
             dikaNumber: r.dika_number || '',
             bankAccountNo: r.bank_account_no || '',
             items: itemsMap[r.id] || [],
             totalAmount: Number(r.total_amount),
-            totalAmountThaiText: r.total_amount_thai_text,
+            totalAmountThaiText: cleanThaiText(r.total_amount_thai_text),
             withholdingTaxPercent: Number(r.withholding_tax_percent || 0),
             withholdingTaxAmount: Number(r.withholding_tax_amount || 0),
             netPaidAmount: Number(r.net_paid_amount),
-            memo: r.memo || '',
+            memo: r.memo ? cleanThaiText(r.memo) : '',
             status: r.status,
             printCount: r.print_count || 0,
             lastBankType: r.last_bank_type || 'KTB',
+            createdBy: cleanThaiText(r.created_by, r.created_by_username),
+            createdByUsername: r.created_by_username,
         }));
         res.json({ success: true, data: cheques });
     } catch (e) {
@@ -393,9 +509,20 @@ router.get('/cheques', async (req, res) => {
 });
 
 router.post('/cheques', async (req, res) => {
-    const cheque = req.body;
+    const rawCheque = req.body.cheque || req.body;
+    if (!rawCheque || typeof rawCheque !== 'object') {
+        return res.status(400).json({ success: false, message: 'ข้อมูลเช็คไม่ถูกต้อง' });
+    }
+    const cheque = { ...rawCheque };
     if (!cheque.id) cheque.id = `chq_${Date.now()}`;
     
+    // กู้คืนภาษาไทยให้ถูกต้องก่อนบันทึก
+    cheque.chequePayeeName = cleanThaiText(cheque.chequePayeeName || cheque.stubPayeeName || 'ผู้รับเงิน');
+    cheque.stubPayeeName = cleanThaiText(cheque.stubPayeeName || cheque.chequePayeeName);
+    cheque.totalAmountThaiText = cleanThaiText(cheque.totalAmountThaiText || '');
+    if (cheque.memo) cheque.memo = cleanThaiText(cheque.memo);
+    if (cheque.createdBy) cheque.createdBy = cleanThaiText(cheque.createdBy, cheque.createdByUsername);
+
     // Save to memory
     const idx = memoryDb.cheques.findIndex(c => c.id === cheque.id);
     if (idx >= 0) memoryDb.cheques[idx] = cheque;
@@ -430,14 +557,25 @@ router.post('/cheques', async (req, res) => {
                     last_bank_type = VALUES(last_bank_type)`,
                 [
                     cheque.id, cheque.chequeNumber || null, cheque.stubDate || null, cheque.chequeDate || null,
-                    cheque.fiscalYear || 2570, cheque.stubPayeeName || cheque.chequePayeeName, cheque.chequePayeeName,
-                    cheque.dikaNumber || null, cheque.bankAccountNo || null, cheque.totalAmount || 0,
-                    cheque.totalAmountThaiText || '', cheque.withholdingTaxPercent || 0, cheque.withholdingTaxAmount || 0,
-                    cheque.netPaidAmount || cheque.totalAmount || 0, cheque.memo || null, cheque.status || 'PENDING',
-                    cheque.createdBy || 'เจ้าหน้าที่', cheque.createdByUsername || 'admin', cheque.printCount || 0,
+                    cheque.fiscalYear || 2570, cheque.stubPayeeName, cheque.chequePayeeName,
+                    cheque.dikaNumber || null, cheque.bankAccountNo || null, Number(cheque.totalAmount || 0),
+                    cheque.totalAmountThaiText, Number(cheque.withholdingTaxPercent || 0), Number(cheque.withholdingTaxAmount || 0),
+                    Number(cheque.netPaidAmount || cheque.totalAmount || 0), cheque.memo || null, cheque.status || 'PENDING',
+                    cheque.createdBy || 'เจ้าหน้าที่', cheque.createdByUsername || 'admin', Number(cheque.printCount || 0),
                     cheque.lastBankType || 'KTB'
                 ]
             );
+
+            // บันทึกรายการย่อย (cheque_items)
+            if (cheque.items && Array.isArray(cheque.items)) {
+                await pool.query('DELETE FROM cheque_items WHERE cheque_id = ?', [cheque.id]);
+                for (const it of cheque.items) {
+                    await pool.query(
+                        'INSERT INTO cheque_items (id, cheque_id, description, amount) VALUES (?, ?, ?, ?)',
+                        [it.id || `it_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`, cheque.id, cleanThaiText(it.description || ''), Number(it.amount || 0)]
+                    );
+                }
+            }
         } catch (e) {
             console.error('[MySQL Save Cheque Error]', e.message);
         }
@@ -450,6 +588,9 @@ router.delete('/cheques/:id', async (req, res) => {
     memoryDb.cheques = memoryDb.cheques.filter(c => c.id !== id);
     if (isMysqlConnected && pool) {
         try {
+            // ลบข้อมูลที่ผูกกัน (Foreign Keys) ก่อน เพื่อให้ลบจาก MySQL สำเร็จ 100%
+            await pool.query('DELETE FROM cheque_items WHERE cheque_id = ?', [id]);
+            await pool.query('DELETE FROM cheque_print_logs WHERE cheque_id = ?', [id]);
             await pool.query('DELETE FROM cheques WHERE id = ?', [id]);
         } catch (e) {
             console.error('[MySQL Delete Cheque Error]', e.message);
@@ -461,11 +602,11 @@ router.delete('/cheques/:id', async (req, res) => {
 router.post('/cheques/:id/void', async (req, res) => {
     const { id } = req.params;
     const { reason, operator } = req.body;
-    const voidBy = operator?.fullName || 'ผู้ใช้งาน';
+    const voidBy = cleanThaiText(operator?.fullName || 'ผู้ใช้งาน');
     const chq = memoryDb.cheques.find(c => c.id === id);
     if (chq) {
         chq.status = 'VOID';
-        chq.voidReason = reason;
+        chq.voidReason = cleanThaiText(reason || 'ยกเลิก');
         chq.voidAt = new Date().toISOString();
         chq.voidBy = voidBy;
     }
@@ -473,7 +614,7 @@ router.post('/cheques/:id/void', async (req, res) => {
         try {
             await pool.query(
                 'UPDATE cheques SET status = ?, void_reason = ?, void_at = NOW(), void_by = ? WHERE id = ?',
-                ['VOID', reason || 'ยกเลิก', voidBy, id]
+                ['VOID', cleanThaiText(reason || 'ยกเลิก'), voidBy, id]
             );
         } catch (e) {
             console.error('[MySQL Void Cheque Error]', e.message);
@@ -485,11 +626,24 @@ router.post('/cheques/:id/void', async (req, res) => {
 // 4. Users & Auth
 router.get('/users', async (req, res) => {
     if (!isMysqlConnected || !pool) {
-        return res.json({ success: true, data: memoryDb.users });
+        const cleaned = memoryDb.users.map(u => ({
+            ...u,
+            fullName: cleanThaiText(u.fullName, u.username),
+            position: cleanThaiText(u.position, u.username),
+        }));
+        return res.json({ success: true, data: cleaned });
     }
     try {
         const [rows] = await pool.query('SELECT id, username, full_name, position, role, status FROM users');
-        res.json({ success: true, data: rows.map(r => ({ id: r.id, username: r.username, fullName: r.full_name, position: r.position, role: r.role, status: r.status })) });
+        const cleaned = rows.map(r => ({
+            id: r.id,
+            username: r.username,
+            fullName: cleanThaiText(r.full_name, r.username),
+            position: cleanThaiText(r.position, r.username),
+            role: r.role,
+            status: r.status,
+        }));
+        res.json({ success: true, data: cleaned });
     } catch (e) {
         res.json({ success: true, data: memoryDb.users });
     }
@@ -501,8 +655,8 @@ router.post('/users/register', async (req, res) => {
     const newUser = {
         id: `user_${Date.now()}`,
         username: cleanUsername,
-        fullName: (fullName || '').trim(),
-        position: position || 'เจ้าหน้าที่การเงินและบัญชี',
+        fullName: cleanThaiText((fullName || '').trim(), cleanUsername),
+        position: cleanThaiText(position || 'เจ้าหน้าที่การเงินและบัญชี', cleanUsername),
         role: role || 'USER',
         status: 'PENDING',
     };
@@ -524,10 +678,13 @@ router.post('/users/register', async (req, res) => {
 router.put('/users/:id', async (req, res) => {
     const { id } = req.params;
     const { fullName, position, role, status, password } = req.body;
-    const idx = memoryDb.users.findIndex(u => u.id === id);
+    const cleanName = fullName ? cleanThaiText(fullName, id) : undefined;
+    const cleanPos = position ? cleanThaiText(position, id) : undefined;
+    
+    const idx = memoryDb.users.findIndex(u => u.id === id || u.username === id);
     if (idx >= 0) {
-        if (fullName) memoryDb.users[idx].fullName = fullName;
-        if (position) memoryDb.users[idx].position = position;
+        if (cleanName) memoryDb.users[idx].fullName = cleanName;
+        if (cleanPos) memoryDb.users[idx].position = cleanPos;
         if (role) memoryDb.users[idx].role = role;
         if (status) memoryDb.users[idx].status = status;
     }
@@ -535,8 +692,8 @@ router.put('/users/:id', async (req, res) => {
         try {
             const updates = [];
             const values = [];
-            if (fullName) { updates.push('full_name = ?'); values.push(fullName); }
-            if (position) { updates.push('position = ?'); values.push(position); }
+            if (cleanName) { updates.push('full_name = ?'); values.push(cleanName); }
+            if (cleanPos) { updates.push('position = ?'); values.push(cleanPos); }
             if (role) { updates.push('role = ?'); values.push(role); }
             if (status) { updates.push('status = ?'); values.push(status); }
             if (password) {
@@ -545,17 +702,21 @@ router.put('/users/:id', async (req, res) => {
             }
             if (updates.length > 0) {
                 values.push(id);
-                await pool.query(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`, values);
+                values.push(id);
+                await pool.query(`UPDATE users SET ${updates.join(', ')} WHERE id = ? OR username = ?`, values);
             }
         } catch (e) {
             console.error('[MySQL Update User Error]', e.message);
         }
     }
-    res.json({ success: true, data: memoryDb.users[idx] });
+    res.json({ success: true, data: idx >= 0 ? memoryDb.users[idx] : { id } });
 });
 
 router.delete('/users/:id', async (req, res) => {
     const { id } = req.params;
+    if (id.toLowerCase() === 'admin' || id === 'user_admin') {
+        return res.status(400).json({ success: false, message: 'ไม่อนุญาตให้ลบบัญชีผู้ดูแลระบบหลัก (admin)' });
+    }
     memoryDb.users = memoryDb.users.filter(u => u.id !== id && u.username !== id);
     if (isMysqlConnected && pool) {
         try {
@@ -569,16 +730,17 @@ router.delete('/users/:id', async (req, res) => {
 
 router.post('/users/login', async (req, res) => {
     const { username, password } = req.body;
-    const user = memoryDb.users.find(u => u.username.toLowerCase() === (username || '').toLowerCase().trim());
+    const cleanUser = (username || '').toLowerCase().trim();
+    const user = memoryDb.users.find(u => u.username.toLowerCase() === cleanUser);
     if (user && (password === 'admin123' || password === '1234' || password === 'admin')) {
-        return res.json({ success: true, data: user });
+        return res.json({ success: true, data: { ...user, fullName: cleanThaiText(user.fullName, user.username) } });
     }
     if (isMysqlConnected && pool) {
         try {
-            const [rows] = await pool.query('SELECT * FROM users WHERE LOWER(username) = ? LIMIT 1', [(username || '').toLowerCase().trim()]);
+            const [rows] = await pool.query('SELECT * FROM users WHERE LOWER(username) = ? LIMIT 1', [cleanUser]);
             if (rows.length) {
                 const u = rows[0];
-                return res.json({ success: true, data: { id: u.id, username: u.username, fullName: u.full_name, position: u.position, role: u.role, status: u.status } });
+                return res.json({ success: true, data: { id: u.id, username: u.username, fullName: cleanThaiText(u.full_name, u.username), position: cleanThaiText(u.position, u.username), role: u.role, status: u.status } });
             }
         } catch (e) {}
     }

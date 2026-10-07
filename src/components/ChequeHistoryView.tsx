@@ -93,13 +93,13 @@ export const ChequeHistoryView: React.FC<ChequeHistoryViewProps> = ({
   };
 
   // Handle Delete (Admin Only)
-  const handleConfirmDelete = () => {
+  const handleConfirmDelete = async () => {
     if (!deleteModalCheque) return;
     if (!isAdmin) {
       setDeleteModalCheque(null);
       return;
     }
-    StorageService.deleteCheque(deleteModalCheque.id, currentUser);
+    await StorageService.deleteCheque(deleteModalCheque.id, currentUser);
     onRefreshData();
     setDeleteModalCheque(null);
     setSuccessMsg(`ลบรายการเช็คฎีกา ${deleteModalCheque.dikaNumber} เรียบร้อยแล้ว`);
