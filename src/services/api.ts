@@ -128,6 +128,7 @@ export const apiClient = {
     connected: boolean;
     host?: string;
     port?: number;
+    user?: string;
     database?: string;
     error?: string | null;
     apiError?: string | null;
@@ -142,6 +143,7 @@ export const apiClient = {
         connected: res.connected ?? false,
         host: res.host,
         port: res.port,
+        user: res.user,
         database: res.database,
         error: res.error || null,
         apiError: null,

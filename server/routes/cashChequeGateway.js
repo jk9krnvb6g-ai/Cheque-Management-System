@@ -312,6 +312,32 @@ router.post('/db/test', async (req, res) => {
     res.json({ success: true, connected: ok, error: lastError });
 });
 
+router.post('/db/config', async (req, res) => {
+    const { host, port, user, password, database } = req.body;
+    if (host && host.trim()) DB_CONFIG.host = host.trim();
+    if (port) DB_CONFIG.port = Number(port);
+    if (user && user.trim()) DB_CONFIG.user = user.trim();
+    if (password !== undefined) DB_CONFIG.password = password;
+    if (database && database.trim()) DB_CONFIG.database = database.trim();
+    if (pool) {
+        try { await pool.end(); } catch (e) {}
+        pool = null;
+    }
+    const ok = await testConnection();
+    res.json({
+        success: true,
+        connected: ok,
+        error: lastError,
+        config: {
+            host: DB_CONFIG.host,
+            port: DB_CONFIG.port,
+            user: DB_CONFIG.user,
+            database: DB_CONFIG.database,
+            password: DB_CONFIG.password ? '******' : ''
+        }
+    });
+});
+
 // 3. Cheques
 router.get('/cheques', async (req, res) => {
     if (!isMysqlConnected || !pool) {
