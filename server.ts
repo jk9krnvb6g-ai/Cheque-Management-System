@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import express, { Request, Response } from 'express';
 import { chequeRouter } from './server/routes/cheques';
 import { templateRouter } from './server/routes/templates';
