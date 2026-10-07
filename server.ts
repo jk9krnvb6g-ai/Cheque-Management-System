@@ -45,6 +45,10 @@ async function startServer() {
     // In production mode, serve built static assets from dist
     const distPath = path.resolve(__dirname, 'dist');
     app.use(express.static(distPath));
+    app.use('/Cash_Cheque', express.static(distPath));
+    app.get('/Cash_Cheque*', (_req: Request, res: Response) => {
+      res.sendFile(path.join(distPath, 'index.html'));
+    });
     app.get('*', (_req: Request, res: Response) => {
       res.sendFile(path.join(distPath, 'index.html'));
     });
