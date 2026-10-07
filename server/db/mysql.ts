@@ -148,6 +148,13 @@ export async function ensureTablesAndSeeds(): Promise<void> {
   if (!isMysqlConnected) return;
   try {
     const connection = await pool.getConnection();
+    await connection.query("SET NAMES 'utf8mb4' COLLATE 'utf8mb4_unicode_ci'");
+    await connection.query("SET CHARACTER SET 'utf8mb4'");
+    try {
+      await connection.query(`ALTER DATABASE \`${DB_CONFIG.database}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
+      await connection.query(`ALTER TABLE users CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
+      await connection.query(`ALTER TABLE cheques CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
+    } catch {}
 
     // 1. Table users
     await connection.query(`

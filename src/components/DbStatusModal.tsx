@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Database, RefreshCw, CheckCircle2, AlertCircle, X, Server, Key, Save, ChevronDown, ChevronUp } from 'lucide-react';
+import { Database, RefreshCw, CheckCircle2, AlertCircle, X, Server, Key, Save, ChevronDown, ChevronUp, UploadCloud } from 'lucide-react';
 import { apiClient } from '../services/api';
+import { StorageService } from '../utils/storage';
 
 interface DbStatusModalProps {
   isOpen: boolean;
@@ -13,6 +14,8 @@ export const DbStatusModal: React.FC<DbStatusModalProps> = ({ isOpen, onClose, o
   const [status, setStatus] = useState<any>(null);
   const [showConfigForm, setShowConfigForm] = useState(false);
   const [savingConfig, setSavingConfig] = useState(false);
+  const [syncingAll, setSyncingAll] = useState(false);
+  const [syncAllMsg, setSyncAllMsg] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     host: '10.1.0.201',
     port: 3306,
@@ -21,6 +24,23 @@ export const DbStatusModal: React.FC<DbStatusModalProps> = ({ isOpen, onClose, o
     database: 'cheque_system',
   });
   const [saveSuccessMsg, setSaveSuccessMsg] = useState<string | null>(null);
+
+  const handleForcePush = async () => {
+    setSyncingAll(true);
+    setSyncAllMsg(null);
+    try {
+      const users = StorageService.getUsers();
+      const cheques = StorageService.getCheques();
+      await apiClient.pushAllLocalData({ users, cheques });
+      setSyncAllMsg(`ส่งข้อมูลขึ้น MySQL สำเร็จเรียบร้อย! (ผู้ใช้ ${users.length} คน, เช็ค ${cheques.length} รายการ)`);
+      await checkStatus();
+      if (onDataSynced) onDataSynced();
+    } catch (err: any) {
+      setSyncAllMsg(`ส่งข้อมูลไม่สำเร็จ: ${err.message}`);
+    } finally {
+      setSyncingAll(false);
+    }
+  };
 
   const checkStatus = async () => {
     setLoading(true);
@@ -141,6 +161,24 @@ export const DbStatusModal: React.FC<DbStatusModalProps> = ({ isOpen, onClose, o
                   </div>
                 </div>
               )}
+
+              {/* Force Push Button */}
+              <div className="pt-2 border-t border-emerald-200">
+                <button
+                  type="button"
+                  onClick={handleForcePush}
+                  disabled={syncingAll}
+                  className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer disabled:opacity-50"
+                >
+                  <UploadCloud className={`w-4 h-4 ${syncingAll ? 'animate-bounce' : ''}`} />
+                  <span>{syncingAll ? 'กำลังส่งข้อมูลขึ้น MySQL...' : '📤 ซิงค์และส่งข้อมูลปัจจุบันทั้งหมดเข้า MySQL ทันที'}</span>
+                </button>
+                {syncAllMsg && (
+                  <div className="mt-2 p-2 bg-white rounded-lg border border-emerald-300 text-emerald-900 text-[11px] font-medium text-center">
+                    {syncAllMsg}
+                  </div>
+                )}
+              </div>
             </div>
           ) : (
             <div className="p-5 bg-rose-50 border-2 border-rose-300 rounded-2xl space-y-3">

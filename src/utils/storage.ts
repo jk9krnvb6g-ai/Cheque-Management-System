@@ -2,6 +2,7 @@ import { AuditLog, BankTemplateConfig, BankType, Cheque, ChequePrintLog, User, U
 import { getTodayISODate } from './dateUtils';
 import { thaiBahtText } from './thaiBahtText';
 import { apiClient } from '../services/api';
+import { fixThaiMojibake } from './thaiEncoding';
 
 const STORAGE_KEYS = {
   USERS: 'cheque_sys_users',
@@ -536,7 +537,12 @@ export class StorageService {
       return INITIAL_USERS;
     }
     try {
-      return JSON.parse(data);
+      const parsed: User[] = JSON.parse(data);
+      return parsed.map(u => ({
+        ...u,
+        fullName: fixThaiMojibake(u.fullName, u.username),
+        position: fixThaiMojibake(u.position || '', u.username),
+      }));
     } catch {
       return INITIAL_USERS;
     }
@@ -641,6 +647,29 @@ export class StorageService {
     const current = this.getCurrentUser();
     if (current && current.id === target.id) {
       this.setCurrentUser(target);
+    }
+
+    // ส่งข้อมูลแก้ไขไปยัง MySQL
+    try {
+      await apiClient.updateUser(target.id, {
+        fullName: target.fullName,
+        position: target.position,
+        role: target.role,
+        status: target.status,
+        password: data.passwordPlain,
+        operator,
+      });
+    } catch {
+      try {
+        await apiClient.updateUser(target.username, {
+          fullName: target.fullName,
+          position: target.position,
+          role: target.role,
+          status: target.status,
+          password: data.passwordPlain,
+          operator,
+        });
+      } catch {}
     }
 
     return { success: true, user: target };
@@ -824,13 +853,23 @@ export class StorageService {
     localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users));
 
     // ส่งข้อมูลไปยัง MySQL 10.1.0.201
-    apiClient.registerUser({
-      username: newUser.username,
-      fullName: newUser.fullName,
-      position: newUser.position,
-      role: newUser.role,
-      password: data.passwordPlain,
-    }).catch(() => {});
+    try {
+      const apiRes = await apiClient.registerUser({
+        username: newUser.username,
+        fullName: newUser.fullName,
+        position: newUser.position,
+        role: newUser.role,
+        password: data.passwordPlain,
+      });
+      if (apiRes.user?.id) {
+        newUser.id = apiRes.user.id;
+        const uIdx = users.findIndex(u => u.username === newUser.username);
+        if (uIdx >= 0) users[uIdx] = newUser;
+        localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users));
+      }
+    } catch (e) {
+      console.warn('[MySQL Register Warning]', e);
+    }
 
     const auditActor = options?.operator || newUser;
     this.addAuditLog({

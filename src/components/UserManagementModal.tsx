@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { User, UserRole, UserStatus } from '../types';
 import { StorageService } from '../utils/storage';
 import { formatThaiDate } from '../utils/dateUtils';
+import { fixThaiMojibake } from '../utils/thaiEncoding';
 import {
   Users,
   UserPlus,
@@ -225,8 +226,8 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
   // Open Edit User Modal
   const handleOpenEditModal = (targetUser: User) => {
     setEditingUser(targetUser);
-    setEditFullName(targetUser.fullName);
-    setEditPosition(targetUser.position || '');
+    setEditFullName(fixThaiMojibake(targetUser.fullName, targetUser.username));
+    setEditPosition(fixThaiMojibake(targetUser.position || '', targetUser.username));
     setEditRole(targetUser.role);
     setEditStatus(targetUser.status);
     setEditNewPassword('');

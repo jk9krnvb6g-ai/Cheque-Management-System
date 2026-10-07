@@ -112,7 +112,14 @@ async function testConnection() {
         }
 
         if (!pool) {
-            pool = mysql.createPool(DB_CONFIG);
+            pool = mysql.createPool({
+                ...DB_CONFIG,
+                charset: 'utf8mb4',
+            });
+            pool.on('connection', (connection) => {
+                connection.query("SET NAMES 'utf8mb4' COLLATE 'utf8mb4_unicode_ci'");
+                connection.query("SET CHARACTER SET 'utf8mb4'");
+            });
             pool.on('error', (err) => {
                 isMysqlConnected = false;
                 lastError = err.message;
@@ -129,10 +136,12 @@ async function testConnection() {
                 connectTimeout: 2000,
             });
             await rootConn.query(`CREATE DATABASE IF NOT EXISTS \`${DB_CONFIG.database}\` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
+            await rootConn.query(`ALTER DATABASE \`${DB_CONFIG.database}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
             await rootConn.end();
         } catch (e) {}
 
         const conn = await pool.getConnection();
+        await conn.query("SET NAMES 'utf8mb4' COLLATE 'utf8mb4_unicode_ci'");
         await conn.ping();
         conn.release();
         isMysqlConnected = true;
@@ -154,6 +163,11 @@ async function ensureTables() {
     if (!isMysqlConnected || !pool) return;
     try {
         const conn = await pool.getConnection();
+        await conn.query("SET NAMES 'utf8mb4' COLLATE 'utf8mb4_unicode_ci'");
+        try {
+            await conn.query(`ALTER TABLE users CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
+            await conn.query(`ALTER TABLE cheques CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
+        } catch (e) {}
         await conn.query(`
             CREATE TABLE IF NOT EXISTS users (
                 id VARCHAR(64) PRIMARY KEY,
@@ -587,6 +601,79 @@ router.post('/logs/print', (req, res) => {
 
 router.get('/logs/audit', (req, res) => {
     res.json({ success: true, data: memoryDb.auditLogs });
+});
+
+// 6. Bulk Sync Push (ซิงค์ข้อมูลจากหน้าเว็บขึ้น MySQL ทั้งหมดทันที)
+router.post('/sync/push', async (req, res) => {
+    const { cheques, users, printLogs, auditLogs } = req.body;
+    let importedCheques = 0;
+    let importedUsers = 0;
+
+    if (users && Array.isArray(users)) {
+        for (const u of users) {
+            const idx = memoryDb.users.findIndex(ex => ex.id === u.id || ex.username === u.username);
+            if (idx >= 0) memoryDb.users[idx] = u;
+            else memoryDb.users.push(u);
+
+            if (isMysqlConnected && pool) {
+                try {
+                    await pool.query(
+                        `INSERT INTO users (id, username, password_hash, full_name, position, role, status)
+                         VALUES (?, ?, ?, ?, ?, ?, ?)
+                         ON DUPLICATE KEY UPDATE
+                            full_name = VALUES(full_name),
+                            position = VALUES(position),
+                            role = VALUES(role),
+                            status = VALUES(status)`,
+                        [u.id, u.username, u.passwordHash || '1234', u.fullName, u.position || '', u.role || 'USER', u.status || 'ACTIVE']
+                    );
+                    importedUsers++;
+                } catch (e) {}
+            }
+        }
+    }
+
+    if (cheques && Array.isArray(cheques)) {
+        for (const c of cheques) {
+            const idx = memoryDb.cheques.findIndex(ex => ex.id === c.id);
+            if (idx >= 0) memoryDb.cheques[idx] = c;
+            else memoryDb.cheques.unshift(c);
+
+            if (isMysqlConnected && pool) {
+                try {
+                    await pool.query(
+                        `INSERT INTO cheques (
+                            id, cheque_number, stub_date, cheque_date, fiscal_year,
+                            stub_payee_name, cheque_payee_name, dika_number, bank_account_no,
+                            total_amount, total_amount_thai_text, withholding_tax_percent, withholding_tax_amount,
+                            net_paid_amount, memo, status, created_by, created_by_username, print_count, last_bank_type
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ON DUPLICATE KEY UPDATE
+                            cheque_number = VALUES(cheque_number),
+                            stub_date = VALUES(stub_date),
+                            cheque_date = VALUES(cheque_date),
+                            fiscal_year = VALUES(fiscal_year),
+                            stub_payee_name = VALUES(stub_payee_name),
+                            cheque_payee_name = VALUES(cheque_payee_name),
+                            total_amount = VALUES(total_amount),
+                            status = VALUES(status)`,
+                        [
+                            c.id, c.chequeNumber || null, c.stubDate || null, c.chequeDate || null,
+                            c.fiscalYear || 2570, c.stubPayeeName || c.chequePayeeName, c.chequePayeeName,
+                            c.dikaNumber || null, c.bankAccountNo || null, c.totalAmount || 0,
+                            c.totalAmountThaiText || '', c.withholdingTaxPercent || 0, c.withholdingTaxAmount || 0,
+                            c.netPaidAmount || c.totalAmount || 0, c.memo || null, c.status || 'PENDING',
+                            c.createdBy || 'เจ้าหน้าที่', c.createdByUsername || 'admin', c.printCount || 0,
+                            c.lastBankType || 'KTB'
+                        ]
+                    );
+                    importedCheques++;
+                } catch (e) {}
+            }
+        }
+    }
+
+    res.json({ success: true, importedUsers, importedCheques });
 });
 
 module.exports = router;
