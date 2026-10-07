@@ -9,6 +9,8 @@ import { SettingsView } from './components/SettingsView';
 import { ChequePrintModal } from './components/ChequePrintModal';
 import { LoginModal } from './components/LoginModal';
 import { UserManagementModal } from './components/UserManagementModal';
+import { DbStatusModal } from './components/DbStatusModal';
+import { apiClient } from './services/api';
 import { CheckCircle2 } from 'lucide-react';
 
 export default function App() {
@@ -18,6 +20,8 @@ export default function App() {
   const [currentTab, setCurrentTab] = useState<AppTab>('write');
   const [cheques, setCheques] = useState<Cheque[]>(() => StorageService.getCheques());
   const [usersCount, setUsersCount] = useState<number>(() => StorageService.getUsers().length);
+  const [dbConnected, setDbConnected] = useState<boolean | null>(null);
+  const [isDbStatusOpen, setIsDbStatusOpen] = useState(false);
 
   // Navigation props between tabs
   const [selectedBankForTemplates, setSelectedBankForTemplates] = useState<BankType>('KTB');
@@ -100,6 +104,43 @@ export default function App() {
     }
   }, [isAdmin, currentTab]);
 
+  // Initial MySQL sync and periodic database connection health check
+  useEffect(() => {
+    // 1. Initial background sync with MySQL 10.1.0.201
+    StorageService.syncWithBackend().then(res => {
+      if (res.success) {
+        setDbConnected(true);
+        refreshData();
+      }
+    }).catch(() => {
+      setDbConnected(false);
+    });
+
+    // 2. Health check function
+    const checkDbHealth = async () => {
+      try {
+        const status = await apiClient.getDbStatus();
+        setDbConnected(status?.connected ?? false);
+      } catch {
+        setDbConnected(false);
+      }
+    };
+
+    checkDbHealth();
+    const interval = setInterval(checkDbHealth, 30000); // Check every 30s
+
+    // 3. Listen to external or cross-tab sync events
+    const handleDbSynced = () => {
+      refreshData();
+    };
+    window.addEventListener('cheque_db_synced', handleDbSynced);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('cheque_db_synced', handleDbSynced);
+    };
+  }, []);
+
   // Keyboard Shortcuts: F2 to write new cheque, Escape to close modals
   useEffect(() => {
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
@@ -111,12 +152,13 @@ export default function App() {
       if (e.key === 'Escape') {
         if (isPrintModalOpen) setIsPrintModalOpen(false);
         if (isUserManagementOpen) setIsUserManagementOpen(false);
+        if (isDbStatusOpen) setIsDbStatusOpen(false);
       }
     };
 
     window.addEventListener('keydown', handleGlobalKeyDown);
     return () => window.removeEventListener('keydown', handleGlobalKeyDown);
-  }, [isPrintModalOpen, isUserManagementOpen]);
+  }, [isPrintModalOpen, isUserManagementOpen, isDbStatusOpen]);
 
   // If not logged in, show login page
   if (!currentUser) {
@@ -143,6 +185,8 @@ export default function App() {
           if (isAdmin) setIsUserManagementOpen(true);
         }}
         userCount={usersCount}
+        dbConnected={dbConnected}
+        onOpenDbStatus={() => setIsDbStatusOpen(true)}
       />
 
       {/* Main Full-Width Content Viewport (ไม่บีบแคบ ไม่เหลือข้างๆ เยอะ) */}
@@ -234,6 +278,13 @@ export default function App() {
           onRefreshData={refreshData}
         />
       )}
+
+      {/* MySQL 10.1.0.201 Database Status & Synchronization Modal */}
+      <DbStatusModal
+        isOpen={isDbStatusOpen}
+        onClose={() => setIsDbStatusOpen(false)}
+        onDataSynced={refreshData}
+      />
 
       {/* Clean Red & White Footer */}
       <footer className="no-print border-t border-red-100 bg-white py-3.5 text-center text-xs text-slate-500 font-medium w-full">

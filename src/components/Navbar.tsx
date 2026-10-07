@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { User } from '../types';
-import { LogOut, UserCheck, Users, Type, Check } from 'lucide-react';
+import { LogOut, UserCheck, Users, Type, Check, Database } from 'lucide-react';
 
 export type AppTab = 'write' | 'executive' | 'history' | 'templates';
 
@@ -12,6 +12,8 @@ interface NavbarProps {
   pendingCount?: number;
   onOpenUserManagement: () => void;
   userCount?: number;
+  dbConnected?: boolean | null;
+  onOpenDbStatus?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -22,6 +24,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   pendingCount = 0,
   onOpenUserManagement,
   userCount = 0,
+  dbConnected = null,
+  onOpenDbStatus,
 }) => {
   // Font switcher state
   const [currentFont, setCurrentFont] = useState<string>(() => {
@@ -153,6 +157,34 @@ export const Navbar: React.FC<NavbarProps> = ({
 
         {/* Zone 3: Account info, Font Switcher, User Management button & Logout */}
         <div className="flex items-center gap-2 sm:gap-3">
+          {/* MySQL Database Connection Status Pill */}
+          {onOpenDbStatus && (
+            <button
+              type="button"
+              onClick={onOpenDbStatus}
+              title="คลิกเพื่อดูสถานะการเชื่อมต่อ MySQL 10.1.0.201 หรือซิงค์ข้อมูล"
+              className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 text-xs font-bold rounded-xl border transition-all cursor-pointer shadow-xs ${
+                dbConnected === true
+                  ? 'bg-emerald-950/60 hover:bg-emerald-950 border-emerald-500/80 text-emerald-200'
+                  : dbConnected === false
+                  ? 'bg-rose-950/60 hover:bg-rose-950 border-rose-500/80 text-rose-200'
+                  : 'bg-amber-950/60 hover:bg-amber-950 border-amber-500/80 text-amber-200'
+              }`}
+            >
+              <Database className="w-3.5 h-3.5 shrink-0" />
+              <span className={`w-2 h-2 rounded-full shrink-0 ${
+                dbConnected === true
+                  ? 'bg-emerald-400 animate-pulse'
+                  : dbConnected === false
+                  ? 'bg-rose-400'
+                  : 'bg-amber-400 animate-ping'
+              }`} />
+              <span className="hidden sm:inline text-[11px] font-mono">
+                {dbConnected === true ? 'MySQL 10.1.0.201' : dbConnected === false ? 'MySQL ออฟไลน์' : 'MySQL ตรวจสอบ...'}
+              </span>
+            </button>
+          )}
+
           {/* Font Switcher Dropdown */}
           <div className="relative" ref={fontMenuRef}>
             <button

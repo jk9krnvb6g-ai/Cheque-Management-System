@@ -1,6 +1,7 @@
 import { AuditLog, BankTemplateConfig, BankType, Cheque, ChequePrintLog, User, UserRole, UserStatus } from '../types';
 import { getTodayISODate } from './dateUtils';
 import { thaiBahtText } from './thaiBahtText';
+import { apiClient } from '../services/api';
 
 const STORAGE_KEYS = {
   USERS: 'cheque_sys_users',
@@ -443,6 +444,90 @@ const INITIAL_AUDIT_LOGS: AuditLog[] = [
 ];
 
 export class StorageService {
+  // =========================================================================
+  // MySQL Central Database Synchronization (10.1.0.201)
+  // =========================================================================
+
+  /**
+   * ดึงข้อมูลทั้งหมดจากฐานข้อมูล MySQL เครื่อง 10.1.0.201 มาบันทึกลง LocalStorage
+   * เพื่อให้หน้าจอแสดงข้อมูลตรงกับฐานข้อมูล MySQL 100%
+   */
+  static async syncWithBackend(): Promise<{ success: boolean; chequesCount?: number; usersCount?: number; error?: string }> {
+    try {
+      const [cheques, users, templates, printLogs, auditLogs] = await Promise.all([
+        apiClient.getCheques().catch(() => null),
+        apiClient.getUsers().catch(() => null),
+        apiClient.getTemplates().catch(() => null),
+        apiClient.getPrintLogs().catch(() => null),
+        apiClient.getAuditLogs().catch(() => null),
+      ]);
+
+      if (cheques && Array.isArray(cheques)) {
+        localStorage.setItem(STORAGE_KEYS.CHEQUES, JSON.stringify(cheques));
+      }
+      if (users && Array.isArray(users) && users.length > 0) {
+        // อัปเดตข้อมูลผู้ใช้จาก MySQL แต่เก็บ passwordHash เดิมถ้าฝั่ง MySQL ส่ง safe user
+        const localUsers = this.getUsers();
+        const mergedUsers = users.map(u => {
+          const local = localUsers.find(lu => lu.id === u.id || lu.username === u.username);
+          return {
+            ...u,
+            passwordHash: u.passwordHash || local?.passwordHash || '',
+          };
+        });
+        localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(mergedUsers));
+      }
+      if (templates && typeof templates === 'object' && Object.keys(templates).length > 0) {
+        localStorage.setItem(STORAGE_KEYS.TEMPLATES, JSON.stringify(templates));
+      }
+      if (printLogs && Array.isArray(printLogs)) {
+        localStorage.setItem(STORAGE_KEYS.PRINT_LOGS, JSON.stringify(printLogs));
+      }
+      if (auditLogs && Array.isArray(auditLogs)) {
+        localStorage.setItem(STORAGE_KEYS.AUDIT_LOGS, JSON.stringify(auditLogs));
+      }
+
+      // แจ้งให้ React components ที่ฟังอีเวนต์นี้รีเฟรชข้อมูลอัตโนมัติ
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('cheque_db_synced', {
+          detail: {
+            timestamp: new Date().toISOString(),
+            chequesCount: cheques?.length || 0,
+            usersCount: users?.length || 0,
+          }
+        }));
+      }
+
+      return {
+        success: true,
+        chequesCount: cheques?.length || 0,
+        usersCount: users?.length || 0,
+      };
+    } catch (err: any) {
+      console.warn('[Sync Error]', err);
+      return { success: false, error: err.message };
+    }
+  }
+
+  /**
+   * ส่งข้อมูลทั้งหมดที่อยู่ในเครื่องนี้ขึ้นไปยังฐานข้อมูล MySQL 10.1.0.201
+   */
+  static async pushAllLocalToMysql(): Promise<{ success: boolean; inserted?: any; error?: string }> {
+    try {
+      const payload = {
+        cheques: this.getCheques(),
+        users: this.getUsers(),
+        templates: this.getTemplates(),
+        printLogs: this.getPrintLogs(),
+        auditLogs: this.getAuditLogs(),
+      };
+      const res = await apiClient.pushAllLocalData(payload);
+      return res;
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  }
+
   // Users
   static getUsers(): User[] {
     const data = localStorage.getItem(STORAGE_KEYS.USERS);
@@ -475,6 +560,15 @@ export class StorageService {
       target: `ผู้ใช้งาน: ${user.username} (${user.fullName})`,
       details: `${action === 'CREATE' ? 'เพิ่มผู้ใช้งานใหม่' : 'แก้ไขข้อมูลผู้ใช้'} สิทธิ์: ${user.role} สถานะ: ${user.status}`,
     }, operator);
+
+    // Sync to MySQL in background
+    apiClient.updateUser(user.id, {
+      fullName: user.fullName,
+      position: user.position,
+      role: user.role,
+      status: user.status,
+      operator,
+    }).catch(() => {});
   }
 
   static deleteUser(userId: string, operator: User): void {
@@ -496,6 +590,9 @@ export class StorageService {
       target: `ผู้ใช้งาน: ${target.username}`,
       details: `ลบผู้ใช้งาน ${target.fullName}`,
     }, operator);
+
+    // Sync to MySQL in background
+    apiClient.deleteUser(userId, operator).catch(() => {});
   }
 
   static async updateUserProfile(
@@ -593,6 +690,32 @@ export class StorageService {
     passwordPlain: string,
     remember: boolean = false
   ): Promise<{ success: boolean; user?: User; error?: string }> {
+    // 1. พยายามเชื่อมต่อและตรวจสอบรหัสผ่านกับ Backend / MySQL 10.1.0.201 ก่อน
+    try {
+      const remote = await apiClient.login(username, passwordPlain);
+      if (remote.success && remote.user) {
+        const loggedIn = remote.user;
+        // บันทึกลง LocalStorage
+        const users = this.getUsers();
+        const idx = users.findIndex(u => u.id === loggedIn.id || u.username === loggedIn.username);
+        if (idx >= 0) {
+          users[idx] = { ...users[idx], ...loggedIn };
+        } else {
+          users.push(loggedIn);
+        }
+        localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users));
+
+        this.setCurrentUser(loggedIn, remember);
+        return { success: true, user: loggedIn };
+      } else if (remote.message && !remote.message.includes('Failed to fetch') && !remote.message.includes('NetworkError')) {
+        // ถ้าระบบตอบกลับข้อผิดพลาดจากฐานข้อมูล MySQL ชัดเจน เช่น รหัสผิด หรือ ถูกระงับ
+        return { success: false, error: remote.message };
+      }
+    } catch {
+      // Offline fallback ไปยัง local storage
+    }
+
+    // 2. Fallback ตรวจสอบกับ LocalStorage ในเครื่อง
     const users = this.getUsers();
     const target = users.find(u => u.username.toLowerCase() === username.trim().toLowerCase());
     if (!target) {
@@ -678,7 +801,6 @@ export class StorageService {
     }
 
     const passwordHash = await hashPassword(data.passwordPlain);
-    // If registered by Admin operator, active by default; if self-registered, status is PENDING awaiting approval
     const defaultStatus: UserStatus = options?.status || (options?.operator ? 'ACTIVE' : 'PENDING');
     const newUser: User = {
       id: 'user_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
@@ -693,6 +815,15 @@ export class StorageService {
 
     users.push(newUser);
     localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users));
+
+    // ส่งข้อมูลไปยัง MySQL 10.1.0.201
+    apiClient.registerUser({
+      username: newUser.username,
+      fullName: newUser.fullName,
+      position: newUser.position,
+      role: newUser.role,
+      password: data.passwordPlain,
+    }).catch(() => {});
 
     const auditActor = options?.operator || newUser;
     this.addAuditLog({
@@ -721,6 +852,9 @@ export class StorageService {
       target: `อนุมัติผู้ใช้: ${user.username}`,
       details: `${operator.fullName} ได้อนุมัติการใช้งานให้แก่: ${user.fullName} (${user.position})`,
     }, operator);
+
+    // Sync status to MySQL
+    apiClient.updateUser(userId, { status: 'ACTIVE', operator }).catch(() => {});
     return user;
   }
 
@@ -735,6 +869,9 @@ export class StorageService {
       target: `ผู้ใช้งาน: ${user.username}`,
       details: `เปลี่ยนสถานะเป็น ${user.status === 'ACTIVE' ? 'เปิดใช้งาน' : 'ระงับการใช้งาน'}`,
     }, operator);
+
+    // Sync to MySQL
+    apiClient.updateUser(userId, { status: user.status, operator }).catch(() => {});
     return user;
   }
 
@@ -749,6 +886,9 @@ export class StorageService {
       target: `ผู้ใช้งาน: ${user.username}`,
       details: `ปรับเปลี่ยนสิทธิ์เป็น ${newRole}`,
     }, operator);
+
+    // Sync to MySQL
+    apiClient.updateUser(userId, { role: newRole, operator }).catch(() => {});
     return user;
   }
 
@@ -864,6 +1004,12 @@ export class StorageService {
     }
 
     localStorage.setItem(STORAGE_KEYS.CHEQUES, JSON.stringify(cheques));
+
+    // ส่งข้อมูลเช็คไปบันทึกใน MySQL (10.1.0.201)
+    apiClient.saveCheque(updatedCheque, operator).catch(err => {
+      console.warn('[MySQL Save Cheque Warning]', err);
+    });
+
     return updatedCheque;
   }
 
@@ -888,6 +1034,11 @@ export class StorageService {
       details: `ยกเลิกเช็ค (VOID) ${cheque.chequeNumber ? `เลขที่ ${cheque.chequeNumber}` : ''} เหตุผล: ${cheque.voidReason}`,
     }, operator);
 
+    // ส่งข้อมูลยกเลิกเช็คไปบันทึกใน MySQL (10.1.0.201)
+    apiClient.voidCheque(chequeId, reason, operator).catch(err => {
+      console.warn('[MySQL Void Cheque Warning]', err);
+    });
+
     return cheque;
   }
 
@@ -908,6 +1059,11 @@ export class StorageService {
       target: `ฎีกา ${target.dikaNumber}`,
       details: `ลบรายการเช็ค ${target.chequePayeeName} มูลค่า ${target.totalAmount.toLocaleString('th-TH', { minimumFractionDigits: 2 })} บาท`,
     }, operator);
+
+    // ส่งข้อมูลลบเช็คไป MySQL (10.1.0.201)
+    apiClient.deleteCheque(chequeId, operator).catch(err => {
+      console.warn('[MySQL Delete Cheque Warning]', err);
+    });
   }
 
   // Print Logs - Strictly Append-Only!
@@ -992,6 +1148,9 @@ export class StorageService {
         : `ออกเช็ค ${params.bankType} ครั้งที่ 1`,
     }, params.operator);
 
+    // Sync print log to MySQL (10.1.0.201)
+    apiClient.recordPrintLog(newLog).catch(() => {});
+
     return newLog;
   }
 
@@ -1022,6 +1181,9 @@ export class StorageService {
     // Keep last 1,000 audit logs
     if (logs.length > 1000) logs.pop();
     localStorage.setItem(STORAGE_KEYS.AUDIT_LOGS, JSON.stringify(logs));
+
+    // Sync audit log to MySQL (10.1.0.201)
+    apiClient.recordAuditLog(newAudit).catch(() => {});
   }
 
   // Bank Templates
@@ -1145,6 +1307,9 @@ export class StorageService {
       target: `Template ${config.bankType}`,
       details: `ปรับแต่งพิกัดพิมพ์และ Offset ของ ${config.bankNameThai} (Offset X: ${config.globalOffsetX}mm, Y: ${config.globalOffsetY}mm)`,
     }, operator);
+
+    // Sync template to MySQL (10.1.0.201)
+    apiClient.saveTemplate(config.bankType, config).catch(() => {});
   }
 
   static deleteTemplate(bankType: string, operator: User): void {

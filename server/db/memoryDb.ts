@@ -36,6 +36,91 @@ export const INITIAL_USERS: User[] = [
   },
 ];
 
+// Initial seeded bank templates
+export const INITIAL_TEMPLATES: Record<BankType, BankTemplateConfig> = {
+  KTB: {
+    bankType: 'KTB',
+    bankNameThai: 'ธนาคารกรุงไทย',
+    bankNameEng: 'Krungthai Bank (KTB)',
+    bankColor: '#00a5e5',
+    widthMm: 241,
+    heightMm: 90,
+    globalOffsetX: 0,
+    globalOffsetY: 0,
+    hideDateDefault: true,
+    feedDirection: 'LANDSCAPE_NORMAL',
+    strikeBearer: { x: 218, y: 24, widthMm: 16, enabledDefault: true },
+    crossing: { x: 75, y: 8, typeDefault: 'NONE' },
+    fields: {
+      date: { x: 187.5, y: 4.5, fontSizePt: 12.5, letterSpacingMm: 2.2, enabled: false },
+      payee: { x: 87, y: 24, fontSizePt: 12.5, enabled: true },
+      payee2: { x: 87, y: 15, fontSizePt: 11, enabled: true },
+      amountText: { x: 99.5, y: 33, fontSizePt: 12, prefix: '=', suffix: '=', enabled: true },
+      amountNumber: { x: 185.5, y: 38, fontSizePt: 11, prefix: '*', suffix: '*', enabled: true },
+      amountNumber2: { x: 185.5, y: 15, fontSizePt: 10, prefix: '*', suffix: '*', enabled: true },
+      amountNumber3: { x: 185.5, y: 65, fontSizePt: 10, prefix: '*', suffix: '*', enabled: true },
+      stubDate: { x: 10, y: 15, fontSizePt: 8.5 },
+      stubPayee: { x: 10, y: 25, fontSizePt: 8.5 },
+      stubDika: { x: 10, y: 36, fontSizePt: 8.5 },
+      stubAmount: { x: 10, y: 48, fontSizePt: 8.5 },
+    },
+  },
+  BAAC: {
+    bankType: 'BAAC',
+    bankNameThai: 'ธนาคารเพื่อการเกษตรและสหกรณ์การเกษตร (ธ.ก.ส.)',
+    bankNameEng: 'Bank for Agriculture and Agricultural Cooperatives (BAAC)',
+    bankColor: '#00703c',
+    widthMm: 235,
+    heightMm: 90,
+    globalOffsetX: 0,
+    globalOffsetY: 0,
+    hideDateDefault: true,
+    feedDirection: 'LANDSCAPE_NORMAL',
+    strikeBearer: { x: 214, y: 27.5, widthMm: 16, enabledDefault: true },
+    crossing: { x: 45, y: 8, typeDefault: 'NONE' },
+    fields: {
+      date: { x: 178, y: 12.5, fontSizePt: 12, letterSpacingMm: 2.2, enabled: false },
+      payee: { x: 48, y: 27.5, fontSizePt: 12.5, enabled: true },
+      payee2: { x: 48, y: 17, fontSizePt: 11, enabled: true },
+      amountText: { x: 58, y: 39.5, fontSizePt: 12, prefix: '=', suffix: '=', enabled: true },
+      amountNumber: { x: 168, y: 47, fontSizePt: 13, prefix: '*', suffix: '*', enabled: true },
+      amountNumber2: { x: 168, y: 18, fontSizePt: 10, prefix: '*', suffix: '*', enabled: true },
+      amountNumber3: { x: 168, y: 70, fontSizePt: 10, prefix: '*', suffix: '*', enabled: true },
+      stubDate: { x: 10, y: 15, fontSizePt: 8.5 },
+      stubPayee: { x: 10, y: 25, fontSizePt: 8.5 },
+      stubDika: { x: 10, y: 36, fontSizePt: 8.5 },
+      stubAmount: { x: 10, y: 48, fontSizePt: 8.5 },
+    },
+  },
+  GSB: {
+    bankType: 'GSB',
+    bankNameThai: 'ธนาคารออมสิน',
+    bankNameEng: 'Government Savings Bank (GSB)',
+    bankColor: '#e6007e',
+    widthMm: 239,
+    heightMm: 90,
+    globalOffsetX: 0,
+    globalOffsetY: 0,
+    hideDateDefault: true,
+    feedDirection: 'LANDSCAPE_NORMAL',
+    strikeBearer: { x: 216, y: 29.5, widthMm: 16, enabledDefault: true },
+    crossing: { x: 45, y: 8, typeDefault: 'NONE' },
+    fields: {
+      date: { x: 180, y: 12.5, fontSizePt: 12, letterSpacingMm: 2.2, enabled: false },
+      payee: { x: 48, y: 29.5, fontSizePt: 12.5, enabled: true },
+      payee2: { x: 48, y: 18, fontSizePt: 11, enabled: true },
+      amountText: { x: 58, y: 40, fontSizePt: 12, prefix: '=', suffix: '=', enabled: true },
+      amountNumber: { x: 168, y: 48, fontSizePt: 13, prefix: '*', suffix: '*', enabled: true },
+      amountNumber2: { x: 168, y: 18, fontSizePt: 10, prefix: '*', suffix: '*', enabled: true },
+      amountNumber3: { x: 168, y: 70, fontSizePt: 10, prefix: '*', suffix: '*', enabled: true },
+      stubDate: { x: 10, y: 15, fontSizePt: 8.5 },
+      stubPayee: { x: 10, y: 25, fontSizePt: 8.5 },
+      stubDika: { x: 10, y: 36, fontSizePt: 8.5 },
+      stubAmount: { x: 10, y: 48, fontSizePt: 8.5 },
+    },
+  },
+};
+
 // Initial seeded cheques
 export const INITIAL_CHEQUES: Cheque[] = [
   {
@@ -118,33 +203,6 @@ export const INITIAL_CHEQUES: Cheque[] = [
     createdAt: '2026-10-02T10:00:00.000Z',
     printCount: 0,
   },
-  {
-    id: 'chq_126_69',
-    chequeNumber: '5049382',
-    stubDate: '2026-09-28',
-    chequeDate: '2026-09-28',
-    fiscalYear: 2569,
-    stubPayeeName: 'ห้างหุ้นส่วนจำกัด สหพัฒนาการค้า',
-    chequePayeeName: 'ห้างหุ้นส่วนจำกัด สหพัฒนาการค้า',
-    dikaNumber: '126/69',
-    bankAccountNo: '345-0-98765-4',
-    items: [
-      { id: 'it_7', description: 'ค่าน้ำมันเชื้อเพลิงและหล่อลื่นยานพาหนะราชการ', amount: 18400 },
-    ],
-    totalAmount: 18400,
-    totalAmountThaiText: 'หนึ่งหมื่นแปดพันสี่ร้อยบาทถ้วน',
-    withholdingTaxPercent: 1,
-    withholdingTaxAmount: 184,
-    netPaidAmount: 18216,
-    status: 'ISSUED',
-    createdBy: 'นายชำนาญ การคลัง',
-    createdByUsername: 'admin',
-    createdAt: '2026-09-28T11:20:00.000Z',
-    printCount: 1,
-    lastPrintedAt: '2026-09-28T13:45:00.000Z',
-    lastPrintedBy: 'นายชำนาญ การคลัง',
-    lastBankType: 'GSB',
-  },
 ];
 
 // Backend In-Memory Database store
@@ -153,6 +211,7 @@ class BackendDatabase {
   private cheques: Cheque[] = [...INITIAL_CHEQUES];
   private printLogs: ChequePrintLog[] = [];
   private auditLogs: AuditLog[] = [];
+  private templates: Record<BankType, BankTemplateConfig> = { ...INITIAL_TEMPLATES };
 
   // Cheque operations
   getCheques(filter?: { fiscalYear?: number; status?: string; search?: string }): Cheque[] {
@@ -180,23 +239,18 @@ class BackendDatabase {
     return this.cheques.find(c => c.id === id);
   }
 
-  saveCheque(cheque: Cheque, operatorName: string = 'ผู้ดูแลระบบ'): Cheque {
+  saveCheque(cheque: Cheque, operatorName: string): Cheque {
     const idx = this.cheques.findIndex(c => c.id === cheque.id);
-    const total = cheque.items.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
-    let taxAmount = 0;
-    if (cheque.withholdingTaxPercent && cheque.withholdingTaxPercent > 0) {
-      taxAmount = Math.round((total * cheque.withholdingTaxPercent / 100) * 100) / 100;
-    } else if (cheque.withholdingTaxAmount && cheque.withholdingTaxAmount > 0) {
-      taxAmount = cheque.withholdingTaxAmount;
-    }
+    const total = cheque.items.reduce((sum, it) => sum + (Number(it.amount) || 0), 0);
+    const taxPercent = cheque.withholdingTaxPercent || 0;
+    const taxAmount = cheque.withholdingTaxAmount || Math.round((total * taxPercent / 100) * 100) / 100;
     const netAmount = Math.max(0, Math.round((total - taxAmount) * 100) / 100);
     const thaiText = thaiBahtText(netAmount > 0 ? netAmount : total);
-    const fiscalYear = cheque.fiscalYear || getThaiFiscalYear(cheque.chequeDate || cheque.stubDate, cheque.dikaNumber);
 
     const saved: Cheque = {
       ...cheque,
-      fiscalYear,
       totalAmount: total,
+      withholdingTaxPercent: taxPercent,
       withholdingTaxAmount: taxAmount,
       netPaidAmount: netAmount,
       totalAmountThaiText: thaiText,
@@ -275,6 +329,16 @@ class BackendDatabase {
   addAuditLog(log: AuditLog): void {
     this.auditLogs.unshift(log);
     if (this.auditLogs.length > 1000) this.auditLogs.pop();
+  }
+
+  // Templates
+  getTemplates(): Record<BankType, BankTemplateConfig> {
+    return { ...this.templates };
+  }
+
+  saveTemplate(config: BankTemplateConfig, _operatorName?: string): boolean {
+    this.templates[config.bankType] = config;
+    return true;
   }
 }
 

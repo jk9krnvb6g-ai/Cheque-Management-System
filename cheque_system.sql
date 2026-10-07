@@ -165,13 +165,51 @@ COMMENT='ตารางที่ 6: แม่แบบพิกัดการ�
 INSERT INTO `users` (`id`, `username`, `password_hash`, `full_name`, `position`, `role`, `status`)
 VALUES 
 ('user_admin', 'admin', '8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918', 'นายชำนาญ การคลัง', 'หัวหน้ากลุ่มงานการเงินและบัญชี', 'ADMIN', 'ACTIVE'),
-('user_somchai', 'somchai', '03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4', 'นายสมชาย บริการดี', 'นักวิชาการเงินและบัญชีชำนาญการ', 'USER', 'ACTIVE')
+('user_somchai', 'somchai', '03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4', 'นายสมชาย บริการดี', 'นักวิชาการเงินและบัญชีชำนาญการ', 'USER', 'ACTIVE'),
+('user_suda', 'suda', '03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4', 'นางสาวสุดา วงศ์สว่าง', 'เจ้าหน้าที่การเงินและพัสดุ', 'USER', 'ACTIVE')
 ON DUPLICATE KEY UPDATE `full_name` = VALUES(`full_name`);
 
 -- 2. เพิ่มแม่แบบพิกัดพิมพ์เช็คเริ่มต้น 3 ธนาคารหลัก
 INSERT INTO `bank_templates` (`bank_type`, `bank_name_thai`, `bank_name_eng`, `bank_color`, `width_mm`, `height_mm`, `config_json`)
 VALUES
-('KTB', 'ธนาคารกรุงไทย', 'Krungthai Bank (KTB)', '#00a5e5', 241.00, 90.00, '{"bankType":"KTB","bankNameThai":"ธนาคารกรุงไทย","widthMm":241,"heightMm":90,"fields":{"date":{"x":187.5,"y":4.5,"fontSizePt":12.5},"payee":{"x":87,"y":24,"fontSizePt":12.5},"amountText":{"x":99.5,"y":33,"fontSizePt":12},"amountNumber":{"x":185.5,"y":38,"fontSizePt":11}}}'),
-('BAAC', 'ธนาคารเพื่อการเกษตรและสหกรณ์การเกษตร (ธ.ก.ส.)', 'BAAC Bank', '#2e7d32', 241.00, 90.00, '{"bankType":"BAAC","bankNameThai":"ธนาคารเพื่อการเกษตรและสหกรณ์การเกษตร (ธ.ก.ส.)","widthMm":241,"heightMm":90,"fields":{"date":{"x":186,"y":5,"fontSizePt":12.5},"payee":{"x":85,"y":23.5,"fontSizePt":12.5},"amountText":{"x":98,"y":32.5,"fontSizePt":12},"amountNumber":{"x":184,"y":37.5,"fontSizePt":11}}}'),
-('GSB', 'ธนาคารออมสิน', 'Government Savings Bank (GSB)', '#e91e63', 241.00, 90.00, '{"bankType":"GSB","bankNameThai":"ธนาคารออมสิน","widthMm":241,"heightMm":90,"fields":{"date":{"x":188,"y":5.5,"fontSizePt":12.5},"payee":{"x":86,"y":24,"fontSizePt":12.5},"amountText":{"x":99,"y":33,"fontSizePt":12},"amountNumber":{"x":185,"y":38,"fontSizePt":11}}}')
+('KTB', 'ธนาคารกรุงไทย', 'Krungthai Bank (KTB)', '#00a5e5', 241.00, 90.00, '{"bankType":"KTB","bankNameThai":"ธนาคารกรุงไทย","bankNameEng":"Krungthai Bank (KTB)","bankColor":"#00a5e5","widthMm":241,"heightMm":90,"globalOffsetX":0,"globalOffsetY":0,"hideDateDefault":true,"feedDirection":"LANDSCAPE_NORMAL","strikeBearer":{"x":218,"y":24,"widthMm":16,"enabledDefault":true},"crossing":{"x":75,"y":8,"typeDefault":"NONE"},"fields":{"date":{"x":187.5,"y":4.5,"fontSizePt":12.5,"letterSpacingMm":2.2,"enabled":false},"payee":{"x":87,"y":24,"fontSizePt":12.5,"enabled":true},"payee2":{"x":87,"y":15,"fontSizePt":11,"enabled":true},"amountText":{"x":99.5,"y":33,"fontSizePt":12,"prefix":"=","suffix":"=","enabled":true},"amountNumber":{"x":185.5,"y":38,"fontSizePt":11,"prefix":"*","suffix":"*","enabled":true},"amountNumber2":{"x":185.5,"y":15,"fontSizePt":10,"prefix":"*","suffix":"*","enabled":true},"amountNumber3":{"x":185.5,"y":65,"fontSizePt":10,"prefix":"*","suffix":"*","enabled":true},"stubDate":{"x":10,"y":15,"fontSizePt":8.5},"stubPayee":{"x":10,"y":25,"fontSizePt":8.5},"stubDika":{"x":10,"y":36,"fontSizePt":8.5},"stubAmount":{"x":10,"y":48,"fontSizePt":8.5}}}'),
+('BAAC', 'ธนาคารเพื่อการเกษตรและสหกรณ์การเกษตร (ธ.ก.ส.)', 'BAAC Bank', '#2e7d32', 241.00, 90.00, '{"bankType":"BAAC","bankNameThai":"ธนาคารเพื่อการเกษตรและสหกรณ์การเกษตร (ธ.ก.ส.)","bankNameEng":"Bank for Agriculture and Agricultural Cooperatives (BAAC)","bankColor":"#00703c","widthMm":235,"heightMm":90,"globalOffsetX":0,"globalOffsetY":0,"hideDateDefault":true,"feedDirection":"LANDSCAPE_NORMAL","strikeBearer":{"x":214,"y":27.5,"widthMm":16,"enabledDefault":true},"crossing":{"x":45,"y":8,"typeDefault":"NONE"},"fields":{"date":{"x":178,"y":12.5,"fontSizePt":12,"letterSpacingMm":2.2,"enabled":false},"payee":{"x":48,"y":27.5,"fontSizePt":12.5,"enabled":true},"payee2":{"x":48,"y":17,"fontSizePt":11,"enabled":true},"amountText":{"x":58,"y":39.5,"fontSizePt":12,"prefix":"=","suffix":"=","enabled":true},"amountNumber":{"x":168,"y":47,"fontSizePt":13,"prefix":"*","suffix":"*","enabled":true},"amountNumber2":{"x":168,"y":18,"fontSizePt":10,"prefix":"*","suffix":"*","enabled":true},"amountNumber3":{"x":168,"y":70,"fontSizePt":10,"prefix":"*","suffix":"*","enabled":true},"stubDate":{"x":10,"y":15,"fontSizePt":8.5},"stubPayee":{"x":10,"y":25,"fontSizePt":8.5},"stubDika":{"x":10,"y":36,"fontSizePt":8.5},"stubAmount":{"x":10,"y":48,"fontSizePt":8.5}}}'),
+('GSB', 'ธนาคารออมสิน', 'Government Savings Bank (GSB)', '#e91e63', 241.00, 90.00, '{"bankType":"GSB","bankNameThai":"ธนาคารออมสิน","bankNameEng":"Government Savings Bank (GSB)","bankColor":"#e6007e","widthMm":239,"heightMm":90,"globalOffsetX":0,"globalOffsetY":0,"hideDateDefault":true,"feedDirection":"LANDSCAPE_NORMAL","strikeBearer":{"x":216,"y":29.5,"widthMm":16,"enabledDefault":true},"crossing":{"x":45,"y":8,"typeDefault":"NONE"},"fields":{"date":{"x":180,"y":12.5,"fontSizePt":12,"letterSpacingMm":2.2,"enabled":false},"payee":{"x":48,"y":29.5,"fontSizePt":12.5,"enabled":true},"payee2":{"x":48,"y":18,"fontSizePt":11,"enabled":true},"amountText":{"x":58,"y":40,"fontSizePt":12,"prefix":"=","suffix":"=","enabled":true},"amountNumber":{"x":168,"y":48,"fontSizePt":13,"prefix":"*","suffix":"*","enabled":true},"amountNumber2":{"x":168,"y":18,"fontSizePt":10,"prefix":"*","suffix":"*","enabled":true},"amountNumber3":{"x":168,"y":70,"fontSizePt":10,"prefix":"*","suffix":"*","enabled":true},"stubDate":{"x":10,"y":15,"fontSizePt":8.5},"stubPayee":{"x":10,"y":25,"fontSizePt":8.5},"stubDika":{"x":10,"y":36,"fontSizePt":8.5},"stubAmount":{"x":10,"y":48,"fontSizePt":8.5}}}')
 ON DUPLICATE KEY UPDATE `bank_name_thai` = VALUES(`bank_name_thai`);
+
+-- 3. ข้อมูลเช็คตัวอย่างเริ่มต้นในระบบ (ให้ตรงกับระบบ 100%)
+INSERT INTO `cheques` (
+  `id`, `cheque_number`, `stub_date`, `cheque_date`, `fiscal_year`, 
+  `stub_payee_name`, `cheque_payee_name`, `dika_number`, `bank_account_no`, 
+  `total_amount`, `total_amount_thai_text`, `withholding_tax_percent`, `withholding_tax_amount`, 
+  `net_paid_amount`, `status`, `created_by`, `created_by_username`, `created_at`, 
+  `print_count`, `last_bank_type`
+) VALUES
+('chq_123_69', '1029301', '2026-10-02', '2026-10-02', 2570, 'นายสมชาย', 'บริษัท ABC จำกัด', '123/69', '123-1-45678-9', 25750.00, 'สองหมื่นห้าพันเจ็ดร้อยห้าสิบบาทถ้วน', 1.00, 257.50, 25492.50, 'ISSUED', 'นาย ก. ประจำการ', 'somchai', '2026-10-02 09:30:00', 2, 'KTB'),
+('chq_124_69', '1029302', '2026-10-02', '2026-10-02', 2570, 'ร้าน XYZ คอมพิวเตอร์', 'ร้าน XYZ', '124/69', '987-2-12345-0', 5000.00, 'ห้าพันบาทถ้วน', 0.00, 0.00, 5000.00, 'ISSUED', 'นายสมชาย บริการดี', 'somchai', '2026-10-02 09:45:00', 1, 'BAAC'),
+('chq_125_69', NULL, '2026-10-02', '2026-10-02', 2570, 'การไฟฟ้านครหลวง', 'การไฟฟ้านครหลวง', '125/69', '123-1-45678-9', 18450.75, 'หนึ่งหมื่นแปดพันสี่ร้อยห้าสิบบาทเจ็ดสิบห้าสตางค์', 0.00, 0.00, 18450.75, 'PENDING', 'นายสมชาย บริการดี', 'somchai', '2026-10-02 10:10:00', 0, 'KTB')
+ON DUPLICATE KEY UPDATE `cheque_payee_name` = VALUES(`cheque_payee_name`);
+
+-- 4. รายการย่อยตามฎีกา (Cheque Items)
+INSERT INTO `cheque_items` (`id`, `cheque_id`, `description`, `amount`) VALUES
+('it_1', 'chq_123_69', 'ค่าวัสดุสำนักงาน', 10000.00),
+('it_2', 'chq_123_69', 'ค่าจ้างเหมาบริการ', 5000.00),
+('it_3', 'chq_123_69', 'ค่าซ่อมบำรุง', 2500.00),
+('it_4', 'chq_123_69', 'ค่าครุภัณฑ์ประจำกลุ่มงาน', 8250.00),
+('it_5', 'chq_124_69', 'ค่าหมึกพิมพ์เลเซอร์และอุปกรณ์ต่อพ่วง', 5000.00),
+('it_6', 'chq_125_69', 'ค่ากระแสไฟฟ้า ประจำเดือนกันยายน', 18450.75)
+ON DUPLICATE KEY UPDATE `description` = VALUES(`description`);
+
+-- 5. บันทึกประวัติการพิมพ์เช็คเริ่มต้น (Print Logs)
+INSERT INTO `cheque_print_logs` (`id`, `cheque_id`, `cheque_number`, `dika_number`, `cheque_payee_name`, `total_amount`, `bank_type`, `print_no`, `printed_by`, `printed_by_username`, `printed_at`, `reprint_reason`) VALUES
+('prt_101', 'chq_123_69', '1029301', '123/69', 'บริษัท ABC จำกัด', 25492.50, 'KTB', 1, 'นาง ข. ตรวจรับ', 'somchai', '2026-10-02 11:00:00', NULL),
+('prt_102', 'chq_123_69', '1029301', '123/69', 'บริษัท ABC จำกัด', 25492.50, 'KTB', 2, 'นาง ข. ตรวจรับ', 'somchai', '2026-10-02 14:20:00', 'เครื่องพิมพ์กระดาษติด พิมพ์ซ้ำ'),
+('prt_103', 'chq_124_69', '1029302', '124/69', 'ร้าน XYZ', 5000.00, 'BAAC', 1, 'นายสมชาย บริการดี', 'somchai', '2026-10-02 10:50:00', NULL)
+ON DUPLICATE KEY UPDATE `printed_by` = VALUES(`printed_by`);
+
+-- 6. บันทึกประวัติกิจกรรมเริ่มต้น (Audit Logs)
+INSERT INTO `audit_logs` (`id`, `timestamp`, `username`, `user_full_name`, `action`, `target`, `details`) VALUES
+('log_001', '2026-10-01 08:30:00', 'admin', 'นายชำนาญ การคลัง', 'LOGIN', 'ระบบพิมพ์เช็ค', 'เข้าสู่ระบบในสิทธิ์ Administrator สำเร็จ'),
+('log_002', '2026-10-02 09:30:00', 'somchai', 'นายสมชาย บริการดี', 'CREATE', 'ฎีกาเลขที่ 123/69', 'สร้างเช็คสั่งจ่าย บริษัท ABC จำกัด ยอดเงิน 25,750.00 บาท'),
+('log_003', '2026-10-02 11:00:00', 'somchai', 'นายสมชาย บริการดี', 'PRINT', 'เช็คเลขที่ 1029301', 'สั่งพิมพ์เช็ค ธนาคารกรุงไทย (KTB) ครั้งที่ 1 สำเร็จ')
+ON DUPLICATE KEY UPDATE `details` = VALUES(`details`);
