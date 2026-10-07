@@ -5,6 +5,8 @@
  */
 import { Cheque, BankTemplateConfig, BankType, User, ChequePrintLog, AuditLog } from '../types';
 
+let cachedWorkingUrl: string | null = null;
+
 // ฟังก์ชันหา URL ของ Backend API
 export function getApiBaseUrl(): string {
   if (typeof window === 'undefined') return '/api';
@@ -15,27 +17,86 @@ export function getApiBaseUrl(): string {
     return custom.trim().replace(/\/+$/, '');
   }
 
-  // 2. ถ้าเข้าเว็บผ่าน Port 3000 หรือ URL เดียวกับ Backend
-  const host = window.location.hostname;
-  const port = window.location.port;
-
-  // ถ้าเข้าผ่าน port 3000 อยู่แล้ว ใช้ /api ได้โดยตรง
-  if (port === '3000') {
-    return '/api';
+  // 2. ถ้าเคยตรวจพบ URL ที่ทำงานได้ก่อนหน้านี้ใน Session
+  if (cachedWorkingUrl) {
+    return cachedWorkingUrl;
   }
 
-  // 3. ถ้าเปิดผ่าน IIS (พอร์ต 80, 8080 หรืออื่นๆ ที่ไม่ใช่ 3000)
-  // ให้เชื่อมต่อไปยัง Backend Node.js ที่พอร์ต 3000 ของเครื่องเดียวกัน
-  const protocol = window.location.protocol;
-  return `${protocol}//${host}:3000/api`;
+  // 3. ค่าเริ่มต้นสำหรับสภาพแวดล้อมต่างๆ:
+  // กรณีเข้าใช้งานผ่าน Path ย่อย (เช่น /Cash_Cheque/ บน IIS หรือ Node)
+  const pathname = window.location.pathname || '';
+  if (pathname.startsWith('/Cash_Cheque')) {
+    return '/Cash_Cheque/api';
+  }
+
+  // กรณีทั่วไป: Same-Origin relative path /api (AI Studio Preview, Vite Dev, Node Production)
+  return '/api';
 }
 
 export function setCustomApiUrl(url: string): void {
   if (!url || !url.trim()) {
     localStorage.removeItem('cheque_sys_api_url');
+    cachedWorkingUrl = null;
   } else {
-    localStorage.setItem('cheque_sys_api_url', url.trim());
+    const clean = url.trim().replace(/\/+$/, '');
+    localStorage.setItem('cheque_sys_api_url', clean);
+    cachedWorkingUrl = clean;
   }
+}
+
+// ฟังก์ชันสแกนหา URL ของ Backend API ที่ทำงานอยู่โดยอัตโนมัติ
+export async function autoDetectApiUrl(): Promise<string | null> {
+  if (typeof window === 'undefined') return null;
+
+  const host = window.location.hostname;
+  const isHttps = window.location.protocol === 'https:';
+  const pathname = window.location.pathname || '';
+
+  const candidates: string[] = [
+    // 1. Custom URL ถ้ามี
+    ...(localStorage.getItem('cheque_sys_api_url') ? [localStorage.getItem('cheque_sys_api_url')!] : []),
+    // 2. Relative URLs (สำหรับ Same-Origin, IIS Reverse Proxy หรือ Node Server)
+    pathname.startsWith('/Cash_Cheque') ? '/Cash_Cheque/api' : '/api',
+    '/api',
+    '/Cash_Cheque/api',
+  ];
+
+  // ถ้าหน้าเว็บเปิดด้วย HTTP (หรือบนเครื่อง localhost) สามารถทดสอบ Direct Port 3003 ได้โดยไม่ติด Mixed Content
+  if (!isHttps || host === 'localhost' || host === '127.0.0.1') {
+    candidates.push(
+      `http://${host}:3003/api`,
+      `http://${host}:3003/Cash_Cheque/api`,
+      'http://localhost:3003/api',
+      'http://127.0.0.1:3003/api',
+      'http://10.2.0.13:3003/api',
+      'http://10.1.0.201:3003/api'
+    );
+  }
+
+  for (const rawUrl of candidates) {
+    const url = rawUrl.replace(/\/+$/, '');
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 1500);
+      const res = await fetch(`${url}/health`, {
+        signal: controller.signal,
+        headers: { Accept: 'application/json' },
+      });
+      clearTimeout(timeoutId);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.status === 'ok') {
+          cachedWorkingUrl = url;
+          localStorage.setItem('cheque_sys_api_url', url);
+          return url;
+        }
+      }
+    } catch {
+      // ข้าม candidate ที่ติดต่อไม่ได้
+    }
+  }
+
+  return null;
 }
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
@@ -70,13 +131,18 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     return await res.json();
   } catch (err: any) {
     clearTimeout(timeoutId);
-    throw err;
+    let msg = err.message || 'การเชื่อมต่อล้มเหลว';
+    if (msg.includes('Failed to fetch') || msg.includes('NetworkError') || msg.includes('abort')) {
+      msg = `ไม่สามารถติดต่อเซิร์ฟเวอร์ Backend API ที่ [${url}] ได้ — กรุณาตรวจสอบว่าได้เปิด start-backend.bat แล้วหรือยัง`;
+    }
+    throw new Error(msg);
   }
 }
 
 export const apiClient = {
   getApiBaseUrl,
   setCustomApiUrl,
+  autoDetectApiUrl,
 
   // 1. Health & Database Status
   async checkHealth(): Promise<{ status: string; database?: any } | null> {
@@ -88,17 +154,45 @@ export const apiClient = {
   },
 
   async getDbStatus(): Promise<{
+    apiConnected: boolean;
+    apiUrl: string;
     connected: boolean;
-    host: string;
-    database: string;
-    tables: { users: number; cheques: number; items: number; templates: number; printLogs: number; auditLogs: number };
-    error: string | null;
-  } | null> {
+    host?: string;
+    port?: number;
+    database?: string;
+    error?: string | null;
+    apiError?: string | null;
+    tables?: { users: number; cheques: number; items: number; templates: number; printLogs: number; auditLogs: number };
+  }> {
+    const currentUrl = getApiBaseUrl();
     try {
       const res = await request<any>('/db/status');
-      return res;
-    } catch {
-      return null;
+      return {
+        apiConnected: true,
+        apiUrl: currentUrl,
+        connected: res.connected ?? false,
+        host: res.host,
+        port: res.port,
+        database: res.database,
+        error: res.error || null,
+        apiError: null,
+        tables: res.counts ? {
+          users: res.counts.users || 0,
+          cheques: res.counts.cheques || 0,
+          items: res.counts.chequeItems || 0,
+          templates: res.counts.templates || 0,
+          printLogs: res.counts.printLogs || 0,
+          auditLogs: res.counts.auditLogs || 0,
+        } : (res.tables || { users: 0, cheques: 0, items: 0, templates: 0, printLogs: 0, auditLogs: 0 }),
+      };
+    } catch (err: any) {
+      return {
+        apiConnected: false,
+        apiUrl: currentUrl,
+        connected: false,
+        apiError: err.message,
+        error: err.message,
+      };
     }
   },
 
@@ -108,6 +202,19 @@ export const apiClient = {
     } catch (err: any) {
       return { success: false, connected: false, status: { error: err.message } };
     }
+  },
+
+  async updateDbConfig(config: {
+    host?: string;
+    port?: number;
+    user?: string;
+    password?: string;
+    database?: string;
+  }): Promise<{ success: boolean; connected: boolean; error: string | null; config?: any }> {
+    return await request<any>('/db/config', {
+      method: 'POST',
+      body: JSON.stringify(config),
+    });
   },
 
   // 2. Cheques

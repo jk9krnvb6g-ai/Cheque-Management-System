@@ -1,4 +1,5 @@
 import mysql from 'mysql2/promise';
+import net from 'net';
 import { User, Cheque, ChequeItem, BankTemplateConfig, BankType, AuditLog, ChequePrintLog } from '../../src/types/index';
 import { INITIAL_USERS, INITIAL_TEMPLATES, INITIAL_CHEQUES, db as fallbackDb } from './memoryDb';
 
@@ -12,19 +13,118 @@ export const DB_CONFIG = {
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0,
-  connectTimeout: 5000,
+  connectTimeout: 2000,
   charset: 'utf8mb4',
 };
 
-const pool = mysql.createPool(DB_CONFIG);
+// Fast non-blocking TCP socket check with 1.5s timeout
+// Prevents connect ETIMEDOUT from hanging HTTP threads for 10+ seconds
+export function checkTcpPort(host: string, port: number, timeoutMs = 1500): Promise<boolean> {
+  return new Promise((resolve) => {
+    const socket = new net.Socket();
+    let settled = false;
+
+    const onDone = (success: boolean) => {
+      if (!settled) {
+        settled = true;
+        socket.destroy();
+        resolve(success);
+      }
+    };
+
+    socket.setTimeout(timeoutMs);
+    socket.once('connect', () => onDone(true));
+    socket.once('timeout', () => onDone(false));
+    socket.once('error', () => onDone(false));
+
+    try {
+      socket.connect(port, host);
+    } catch {
+      onDone(false);
+    }
+  });
+}
 
 let isMysqlConnected = false;
 let lastError: string | null = null;
 let tablesInitialized = false;
+let lastConnectAttemptTime = 0;
+const RECONNECT_COOLDOWN_MS = 25000; // 25s cooldown between automatic reconnection attempts
 
-// Test MySQL connection on boot & keep-alive
-export async function testConnection(): Promise<boolean> {
+function attachPoolErrorHandler(p: any) {
+  if (!p) return;
+  p.on('error', (err: any) => {
+    isMysqlConnected = false;
+    lastError = err?.message || String(err);
+    console.warn(`[MySQL Pool Notice] Host ${DB_CONFIG.host}:${DB_CONFIG.port} - ${lastError}. Fallback active.`);
+  });
+}
+
+let pool = mysql.createPool(DB_CONFIG);
+attachPoolErrorHandler(pool);
+
+// Update MySQL Database Configuration dynamically at runtime
+export async function updateDbConfig(newConfig: {
+  host?: string;
+  port?: number;
+  user?: string;
+  password?: string;
+  database?: string;
+}): Promise<{ success: boolean; connected: boolean; error: string | null; config: typeof DB_CONFIG }> {
+  if (newConfig.host && newConfig.host.trim()) DB_CONFIG.host = newConfig.host.trim();
+  if (newConfig.port) DB_CONFIG.port = Number(newConfig.port);
+  if (newConfig.user && newConfig.user.trim()) DB_CONFIG.user = newConfig.user.trim();
+  if (newConfig.password !== undefined) DB_CONFIG.password = newConfig.password;
+  if (newConfig.database && newConfig.database.trim()) DB_CONFIG.database = newConfig.database.trim();
+
   try {
+    await pool.end();
+  } catch {}
+
+  pool = mysql.createPool({ ...DB_CONFIG, connectTimeout: 2000 });
+  attachPoolErrorHandler(pool);
+  tablesInitialized = false;
+  const connected = await testConnection(true);
+  return {
+    success: true,
+    connected,
+    error: lastError,
+    config: { ...DB_CONFIG, password: DB_CONFIG.password ? '******' : '' },
+  };
+}
+
+// Test MySQL connection on boot & keep-alive (with force flag and cooldown)
+export async function testConnection(force: boolean = false): Promise<boolean> {
+  const now = Date.now();
+  if (!force && !isMysqlConnected && (now - lastConnectAttemptTime < RECONNECT_COOLDOWN_MS)) {
+    return false; // Fast return to avoid stalling HTTP requests during connection cooldown
+  }
+  lastConnectAttemptTime = now;
+
+  try {
+    // 1. Fast TCP reachability check (1.5s timeout)
+    const tcpAlive = await checkTcpPort(DB_CONFIG.host, DB_CONFIG.port, 1500);
+    if (!tcpAlive) {
+      isMysqlConnected = false;
+      lastError = `connect ETIMEDOUT (เซิร์ฟเวอร์ MySQL ที่ ${DB_CONFIG.host}:${DB_CONFIG.port} ไม่ตอบสนอง หรือติด Windows Firewall)`;
+      return false;
+    }
+
+    // 2. ตรวจสอบและสร้างฐานข้อมูลอัตโนมัติหากยังไม่มี (ป้องกัน Error: Unknown database)
+    try {
+      const rootConn = await mysql.createConnection({
+        host: DB_CONFIG.host,
+        port: DB_CONFIG.port,
+        user: DB_CONFIG.user,
+        password: DB_CONFIG.password,
+        connectTimeout: 2000,
+      });
+      await rootConn.query(`CREATE DATABASE IF NOT EXISTS \`${DB_CONFIG.database}\` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
+      await rootConn.end();
+    } catch {
+      // หากไม่มีสิทธิ์ CREATE DATABASE หรือฐานข้อมูลมีอยู่แล้ว ให้ข้ามไป
+    }
+
     const connection = await pool.getConnection();
     await connection.ping();
     connection.release();
@@ -37,7 +137,8 @@ export async function testConnection(): Promise<boolean> {
     return true;
   } catch (err: any) {
     isMysqlConnected = false;
-    lastError = err.message;
+    lastError = err.message || String(err);
+    console.warn(`[MySQL Notice] Host ${DB_CONFIG.host}:${DB_CONFIG.port} (${lastError}). Fallback storage is active.`);
     return false;
   }
 }
@@ -226,12 +327,19 @@ export async function ensureTablesAndSeeds(): Promise<void> {
 // Initial connection test
 testConnection();
 
+// Background keep-alive & auto-reconnect check (every 30s)
+// Checks silently without stalling user HTTP requests
+setInterval(() => {
+  if (!isMysqlConnected) {
+    testConnection(false).catch(() => {});
+  }
+}, 30000);
+
 // ============================================================================
 // 1. Users Database Service
 // ============================================================================
 export const mysqlUsers = {
   async getAll(): Promise<User[]> {
-    if (!isMysqlConnected) await testConnection();
     if (!isMysqlConnected) return fallbackDb.getUsers();
 
     try {
@@ -248,14 +356,14 @@ export const mysqlUsers = {
         status: r.status,
         createdAt: r.created_at ? new Date(r.created_at).toISOString() : new Date().toISOString(),
       }));
-    } catch (err) {
-      console.error('[MySQL Error] getAll users failed:', err);
+    } catch (err: any) {
+      isMysqlConnected = false;
+      lastError = err?.message || String(err);
       return fallbackDb.getUsers();
     }
   },
 
   async findByUsername(username: string): Promise<User | null> {
-    if (!isMysqlConnected) await testConnection();
     if (!isMysqlConnected) return fallbackDb.findUserByUsername(username) || null;
 
     try {
@@ -275,14 +383,14 @@ export const mysqlUsers = {
         status: r.status,
         createdAt: r.created_at ? new Date(r.created_at).toISOString() : new Date().toISOString(),
       };
-    } catch (err) {
-      console.error('[MySQL Error] findByUsername failed:', err);
+    } catch (err: any) {
+      isMysqlConnected = false;
+      lastError = err?.message || String(err);
       return fallbackDb.findUserByUsername(username) || null;
     }
   },
 
   async findById(id: string): Promise<User | null> {
-    if (!isMysqlConnected) await testConnection();
     if (!isMysqlConnected) {
       const user = fallbackDb.getUsers().find(u => u.id === id);
       return user || null;
@@ -305,8 +413,9 @@ export const mysqlUsers = {
         status: r.status,
         createdAt: r.created_at ? new Date(r.created_at).toISOString() : new Date().toISOString(),
       };
-    } catch (err) {
-      console.error('[MySQL Error] findById failed:', err);
+    } catch (err: any) {
+      isMysqlConnected = false;
+      lastError = err?.message || String(err);
       const user = fallbackDb.getUsers().find(u => u.id === id);
       return user || null;
     }
@@ -317,7 +426,6 @@ export const mysqlUsers = {
   },
 
   async create(user: User): Promise<User> {
-    if (!isMysqlConnected) await testConnection();
     if (!isMysqlConnected) {
       fallbackDb.addUser(user);
       return user;
@@ -345,16 +453,16 @@ export const mysqlUsers = {
         ]
       );
       return user;
-    } catch (err) {
-      console.error('[MySQL Error] create user failed:', err);
+    } catch (err: any) {
+      isMysqlConnected = false;
+      lastError = err?.message || String(err);
       fallbackDb.addUser(user);
       return user;
     }
   },
 
   async update(id: string, updates: Partial<User>): Promise<boolean> {
-    if (!isMysqlConnected) await testConnection();
-    if (!isMysqlConnected) return false;
+    if (!isMysqlConnected) return fallbackDb.updateUser(id, updates);
 
     try {
       const fields: string[] = [];
@@ -386,22 +494,23 @@ export const mysqlUsers = {
 
       await pool.query(`UPDATE users SET ${fields.join(', ')} WHERE id = ?`, values);
       return true;
-    } catch (err) {
-      console.error('[MySQL Error] update user failed:', err);
-      return false;
+    } catch (err: any) {
+      isMysqlConnected = false;
+      lastError = err?.message || String(err);
+      return fallbackDb.updateUser(id, updates);
     }
   },
 
   async delete(id: string): Promise<boolean> {
-    if (!isMysqlConnected) await testConnection();
-    if (!isMysqlConnected) return false;
+    if (!isMysqlConnected) return fallbackDb.deleteUser(id);
 
     try {
       await pool.query('DELETE FROM users WHERE id = ?', [id]);
       return true;
-    } catch (err) {
-      console.error('[MySQL Error] delete user failed:', err);
-      return false;
+    } catch (err: any) {
+      isMysqlConnected = false;
+      lastError = err?.message || String(err);
+      return fallbackDb.deleteUser(id);
     }
   },
 };
@@ -411,7 +520,6 @@ export const mysqlUsers = {
 // ============================================================================
 export const mysqlCheques = {
   async getAll(filter?: { fiscalYear?: number; status?: string; search?: string }): Promise<Cheque[]> {
-    if (!isMysqlConnected) await testConnection();
     if (!isMysqlConnected) return fallbackDb.getCheques(filter);
 
     try {
@@ -487,14 +595,14 @@ export const mysqlCheques = {
         lastPrintedBy: r.last_printed_by || undefined,
         lastBankType: r.last_bank_type || 'KTB',
       }));
-    } catch (err) {
-      console.error('[MySQL Error] getAll cheques failed:', err);
+    } catch (err: any) {
+      isMysqlConnected = false;
+      lastError = err?.message || String(err);
       return fallbackDb.getCheques(filter);
     }
   },
 
   async getById(id: string): Promise<Cheque | null> {
-    if (!isMysqlConnected) await testConnection();
     if (!isMysqlConnected) return fallbackDb.getChequeById(id) || null;
 
     try {
@@ -540,14 +648,14 @@ export const mysqlCheques = {
         lastPrintedBy: r.last_printed_by || undefined,
         lastBankType: r.last_bank_type || 'KTB',
       };
-    } catch (err) {
-      console.error('[MySQL Error] getById cheque failed:', err);
+    } catch (err: any) {
+      isMysqlConnected = false;
+      lastError = err?.message || String(err);
       return fallbackDb.getChequeById(id) || null;
     }
   },
 
   async save(cheque: Cheque): Promise<Cheque> {
-    if (!isMysqlConnected) await testConnection();
     if (!isMysqlConnected) {
       return fallbackDb.saveCheque(cheque, cheque.createdBy);
     }
@@ -622,14 +730,14 @@ export const mysqlCheques = {
       }
 
       return cheque;
-    } catch (err) {
-      console.error('[MySQL Error] save cheque failed:', err);
+    } catch (err: any) {
+      isMysqlConnected = false;
+      lastError = err?.message || String(err);
       return fallbackDb.saveCheque(cheque, cheque.createdBy);
     }
   },
 
   async voidCheque(id: string, reason: string, voidBy: string): Promise<boolean> {
-    if (!isMysqlConnected) await testConnection();
     if (!isMysqlConnected) {
       return !!fallbackDb.voidCheque(id, reason, voidBy);
     }
@@ -640,22 +748,23 @@ export const mysqlCheques = {
         [reason, voidBy, id]
       );
       return true;
-    } catch (err) {
-      console.error('[MySQL Error] void cheque failed:', err);
-      return false;
+    } catch (err: any) {
+      isMysqlConnected = false;
+      lastError = err?.message || String(err);
+      return !!fallbackDb.voidCheque(id, reason, voidBy);
     }
   },
 
   async delete(id: string): Promise<boolean> {
-    if (!isMysqlConnected) await testConnection();
     if (!isMysqlConnected) return fallbackDb.deleteCheque(id);
 
     try {
       await pool.query('DELETE FROM cheques WHERE id = ?', [id]);
       return true;
-    } catch (err) {
-      console.error('[MySQL Error] delete cheque failed:', err);
-      return false;
+    } catch (err: any) {
+      isMysqlConnected = false;
+      lastError = err?.message || String(err);
+      return fallbackDb.deleteCheque(id);
     }
   },
 };
@@ -665,7 +774,6 @@ export const mysqlCheques = {
 // ============================================================================
 export const mysqlTemplates = {
   async getAll(): Promise<Record<BankType, BankTemplateConfig>> {
-    if (!isMysqlConnected) await testConnection();
     if (!isMysqlConnected) return fallbackDb.getTemplates();
 
     try {
@@ -682,15 +790,15 @@ export const mysqlTemplates = {
         }
       }
       return { ...fallbackDb.getTemplates(), ...res } as Record<BankType, BankTemplateConfig>;
-    } catch (err) {
-      console.error('[MySQL Error] getAll templates failed:', err);
+    } catch (err: any) {
+      isMysqlConnected = false;
+      lastError = err?.message || String(err);
       return fallbackDb.getTemplates();
     }
   },
 
   async save(templateOrBankType: BankTemplateConfig | BankType, maybeTemplate?: BankTemplateConfig): Promise<boolean> {
     const template: BankTemplateConfig = maybeTemplate || (templateOrBankType as BankTemplateConfig);
-    if (!isMysqlConnected) await testConnection();
     if (!isMysqlConnected) {
       fallbackDb.saveTemplate(template, 'System');
       return true;
@@ -719,22 +827,24 @@ export const mysqlTemplates = {
         ]
       );
       return true;
-    } catch (err) {
-      console.error('[MySQL Error] save template failed:', err);
-      return false;
+    } catch (err: any) {
+      isMysqlConnected = false;
+      lastError = err?.message || String(err);
+      fallbackDb.saveTemplate(template, 'System');
+      return true;
     }
   },
 
   async reset(): Promise<Record<BankType, BankTemplateConfig>> {
-    if (!isMysqlConnected) await testConnection();
     const defaults = INITIAL_TEMPLATES;
     if (isMysqlConnected) {
       try {
         for (const key of Object.keys(defaults) as BankType[]) {
           await this.save(defaults[key]);
         }
-      } catch (err) {
-        console.error('[MySQL Error] reset templates failed:', err);
+      } catch (err: any) {
+        isMysqlConnected = false;
+        lastError = err?.message || String(err);
       }
     }
     return defaults;
@@ -746,7 +856,6 @@ export const mysqlTemplates = {
 // ============================================================================
 export const mysqlPrintLogs = {
   async getAll(chequeId?: string): Promise<ChequePrintLog[]> {
-    if (!isMysqlConnected) await testConnection();
     if (!isMysqlConnected) return fallbackDb.getPrintLogs(chequeId);
 
     try {
@@ -774,14 +883,14 @@ export const mysqlPrintLogs = {
         reprintReason: r.reprint_reason || undefined,
         reprintNote: r.reprint_note || undefined,
       }));
-    } catch (err) {
-      console.error('[MySQL Error] getAll print logs failed:', err);
+    } catch (err: any) {
+      isMysqlConnected = false;
+      lastError = err?.message || String(err);
       return fallbackDb.getPrintLogs(chequeId);
     }
   },
 
   async add(log: ChequePrintLog): Promise<ChequePrintLog> {
-    if (!isMysqlConnected) await testConnection();
     if (!isMysqlConnected) return fallbackDb.addPrintLog(log);
 
     try {
@@ -828,8 +937,9 @@ export const mysqlPrintLogs = {
       );
 
       return log;
-    } catch (err) {
-      console.error('[MySQL Error] add print log failed:', err);
+    } catch (err: any) {
+      isMysqlConnected = false;
+      lastError = err?.message || String(err);
       return fallbackDb.addPrintLog(log);
     }
   },
@@ -840,7 +950,6 @@ export const mysqlPrintLogs = {
 // ============================================================================
 export const mysqlAuditLogs = {
   async getAll(): Promise<AuditLog[]> {
-    if (!isMysqlConnected) await testConnection();
     if (!isMysqlConnected) return fallbackDb.getAuditLogs();
 
     try {
@@ -856,14 +965,14 @@ export const mysqlAuditLogs = {
         target: r.target,
         details: r.details,
       }));
-    } catch (err) {
-      console.error('[MySQL Error] getAll audit logs failed:', err);
+    } catch (err: any) {
+      isMysqlConnected = false;
+      lastError = err?.message || String(err);
       return fallbackDb.getAuditLogs();
     }
   },
 
   async add(log: AuditLog): Promise<AuditLog> {
-    if (!isMysqlConnected) await testConnection();
     if (!isMysqlConnected) {
       fallbackDb.addAuditLog(log);
       return log;
@@ -884,8 +993,9 @@ export const mysqlAuditLogs = {
         ]
       );
       return log;
-    } catch (err) {
-      console.error('[MySQL Error] add audit log failed:', err);
+    } catch (err: any) {
+      isMysqlConnected = false;
+      lastError = err?.message || String(err);
       fallbackDb.addAuditLog(log);
       return log;
     }

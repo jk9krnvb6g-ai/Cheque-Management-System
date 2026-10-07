@@ -4,7 +4,7 @@ import { chequeRouter } from './server/routes/cheques';
 import { templateRouter } from './server/routes/templates';
 import { userRouter } from './server/routes/users';
 import { logRouter } from './server/routes/logs';
-import { testConnection, getDbStatus, bulkPushToMysql, DB_CONFIG } from './server/db/mysql';
+import { testConnection, getDbStatus, bulkPushToMysql, updateDbConfig, DB_CONFIG } from './server/db/mysql';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -13,6 +13,7 @@ const __dirname = path.dirname(__filename);
 
 async function startServer() {
   const app = express();
+  // PORT: Respect process.env.PORT (e.g. 3003 from start-backend.bat, or 3000 default)
   const PORT = Number(process.env.PORT) || 3000;
   const isProd = process.env.NODE_ENV === 'production';
 
@@ -30,8 +31,8 @@ async function startServer() {
   // Body parser middleware
   app.use(express.json({ limit: '10mb' }));
 
-  // API Health Check
-  app.get('/api/health', (_req: Request, res: Response) => {
+  // API Health Check (Support both /api and /Cash_Cheque/api)
+  const handleHealth = (_req: Request, res: Response) => {
     res.json({
       status: 'ok',
       service: 'Cheque Management System API',
@@ -43,31 +44,49 @@ async function startServer() {
         name: DB_CONFIG.database,
       },
     });
-  });
+  };
+  app.get('/api/health', handleHealth);
+  app.get('/Cash_Cheque/api/health', handleHealth);
 
   // Database Connection Status endpoint
-  app.get('/api/db/status', async (_req: Request, res: Response) => {
+  const handleDbStatus = async (_req: Request, res: Response) => {
     try {
       const status = await getDbStatus();
       res.json({ success: true, ...status });
     } catch (err: any) {
       res.status(500).json({ success: false, connected: false, error: err.message });
     }
-  });
+  };
+  app.get('/api/db/status', handleDbStatus);
+  app.get('/Cash_Cheque/api/db/status', handleDbStatus);
 
   // Database Connection Test endpoint
-  app.post('/api/db/test', async (_req: Request, res: Response) => {
+  const handleDbTest = async (_req: Request, res: Response) => {
     try {
-      const connected = await testConnection();
+      const connected = await testConnection(true);
       const status = await getDbStatus();
       res.json({ success: true, connected, status });
     } catch (err: any) {
       res.status(500).json({ success: false, connected: false, error: err.message });
     }
-  });
+  };
+  app.post('/api/db/test', handleDbTest);
+  app.post('/Cash_Cheque/api/db/test', handleDbTest);
+
+  // Database Configuration Update endpoint
+  const handleDbConfig = async (req: Request, res: Response) => {
+    try {
+      const result = await updateDbConfig(req.body);
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  };
+  app.post('/api/db/config', handleDbConfig);
+  app.post('/Cash_Cheque/api/db/config', handleDbConfig);
 
   // Bulk push from browser local storage to MySQL
-  app.post('/api/sync/push', async (req: Request, res: Response) => {
+  const handleSyncPush = async (req: Request, res: Response) => {
     try {
       const payload = req.body;
       const result = await bulkPushToMysql(payload);
@@ -75,13 +94,22 @@ async function startServer() {
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
     }
-  });
+  };
+  app.post('/api/sync/push', handleSyncPush);
+  app.post('/Cash_Cheque/api/sync/push', handleSyncPush);
 
-  // Main CRUD Routes
+  // Main CRUD Routes (Both /api and /Cash_Cheque/api)
   app.use('/api/cheques', chequeRouter);
+  app.use('/Cash_Cheque/api/cheques', chequeRouter);
+
   app.use('/api/templates', templateRouter);
+  app.use('/Cash_Cheque/api/templates', templateRouter);
+
   app.use('/api/users', userRouter);
+  app.use('/Cash_Cheque/api/users', userRouter);
+
   app.use('/api/logs', logRouter);
+  app.use('/Cash_Cheque/api/logs', logRouter);
 
   // Frontend integration
   if (!isProd) {
@@ -115,7 +143,9 @@ async function startServer() {
   });
 
   app.listen(PORT, '0.0.0.0', () => {
-    console.log(`[Full-Stack Server] Server running at http://0.0.0.0:${PORT} (Mode: ${isProd ? 'Production' : 'Development'})`);
+    console.log(`[Cash Cheque Server] Server running at http://0.0.0.0:${PORT} (Mode: ${isProd ? 'Production' : 'Development'})`);
+    console.log(`[Cash Cheque Server] Full App URL: http://localhost:${PORT}/Cash_Cheque/`);
+    console.log(`[Cash Cheque Server] API URL: http://localhost:${PORT}/api/health`);
   });
 }
 

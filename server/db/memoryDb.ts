@@ -293,8 +293,26 @@ class BackendDatabase {
   }
 
   addUser(user: User): User {
+    const existingIdx = this.users.findIndex(u => u.id === user.id || u.username === user.username);
+    if (existingIdx >= 0) {
+      this.users[existingIdx] = { ...this.users[existingIdx], ...user };
+      return this.users[existingIdx];
+    }
     this.users.push(user);
     return user;
+  }
+
+  updateUser(id: string, updates: Partial<User>): boolean {
+    const idx = this.users.findIndex(u => u.id === id);
+    if (idx === -1) return false;
+    this.users[idx] = { ...this.users[idx], ...updates };
+    return true;
+  }
+
+  deleteUser(id: string): boolean {
+    const prev = this.users.length;
+    this.users = this.users.filter(u => u.id !== id);
+    return this.users.length < prev;
   }
 
   findUserByUsername(username: string): User | undefined {

@@ -106,14 +106,11 @@ export default function App() {
 
   // Initial MySQL sync and periodic database connection health check
   useEffect(() => {
-    // 1. Initial background sync with MySQL 10.1.0.201
+    // 1. Initial background sync with backend / MySQL
     StorageService.syncWithBackend().then(res => {
       if (res.success) {
-        setDbConnected(true);
         refreshData();
       }
-    }).catch(() => {
-      setDbConnected(false);
     });
 
     // 2. Health check function
