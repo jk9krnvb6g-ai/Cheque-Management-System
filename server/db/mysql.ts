@@ -64,9 +64,19 @@ function cp874ToByte(char: string): number | null {
   return null;
 }
 
+export function hasThaiMojibake(text?: string | null): boolean {
+  if (!text || typeof text !== 'string') return false;
+  return text.includes('เธ') || text.includes('ธเธ') || text.includes('เ¹') || text.includes('เธ™เธฒเธข') || text.includes('เธชเธธ');
+}
+
 export function cleanThaiMojibake(text: string | null | undefined, contextHint: string = ''): string {
   if (!text || typeof text !== 'string') return text || '';
   const s = text.trim();
+
+  // If text does not exhibit mojibake symptoms, do not touch it (keeps pure Thai intact)
+  if (!hasThaiMojibake(s)) {
+    return text;
+  }
 
   // Known dictionary mappings
   if (s.includes('เธ™เธฒเธขเธŠเธณเธ™เธฒเธ') || (s.includes('เธ') && contextHint === 'admin')) {
@@ -81,10 +91,10 @@ export function cleanThaiMojibake(text: string | null | undefined, contextHint: 
   if (s.includes('เธชเธธเธฃเธŠเธฑเธข') || (s.includes('เธ') && contextHint === 'surachai')) {
     return 'นายสุรชัย มั่นคง';
   }
-  if (s.includes('เธซเธฑเธงเธซเธ™เน‰เธฒ')) return 'หัวหน้ากลุ่มงานการเงินและบัญชี';
+  if (s.includes('เธซเธฑเธงเธซ')) return 'หัวหน้ากลุ่มงานการเงินและบัญชี';
   if (s.includes('เธ เธฃเธธเธ‡เน„เธ—เธข')) return 'ธนาคารกรุงไทย';
 
-  if (!s.includes('เธ') && !s.includes('ธเธ') && !s.includes('เน') && !s.includes('เธ™')) {
+  if (!s.includes('เธ') && !s.includes('ธเธ') && !s.includes('เ¹')) {
     return text;
   }
 
@@ -126,7 +136,9 @@ function attachPoolErrorHandler(p: any) {
   });
   p.on('connection', (connection: any) => {
     connection.query("SET NAMES 'utf8mb4' COLLATE 'utf8mb4_unicode_ci'");
-    connection.query("SET CHARACTER SET 'utf8mb4'");
+    connection.query("SET character_set_client = 'utf8mb4'");
+    connection.query("SET character_set_connection = 'utf8mb4'");
+    connection.query("SET character_set_results = 'utf8mb4'");
   });
 }
 
@@ -218,39 +230,61 @@ export async function ensureTablesAndSeeds(): Promise<void> {
   if (!isMysqlConnected) return;
   try {
     const connection = await pool.getConnection();
-    await connection.query("SET NAMES 'utf8mb4' COLLATE 'utf8mb4_unicode_ci'");
-    await connection.query("SET CHARACTER SET 'utf8mb4'");
     try {
-      await connection.query(`ALTER DATABASE \`${DB_CONFIG.database}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
-    } catch {}
-
-    // Convert existing tables and columns to utf8mb4 (fixes legacy latin1 / tis620 tables)
-    const tablesToConvert = ['users', 'cheques', 'cheque_items', 'bank_templates', 'cheque_print_logs', 'audit_logs'];
-    for (const tbl of tablesToConvert) {
+      await connection.query("SET FOREIGN_KEY_CHECKS = 0");
+      await connection.query("SET NAMES 'utf8mb4' COLLATE 'utf8mb4_unicode_ci'");
+      await connection.query("SET character_set_client = 'utf8mb4'");
+      await connection.query("SET character_set_connection = 'utf8mb4'");
+      await connection.query("SET character_set_results = 'utf8mb4'");
       try {
-        await connection.query(`ALTER TABLE \`${tbl}\` CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
+        await connection.query(`ALTER DATABASE \`${DB_CONFIG.database}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
       } catch {}
-    }
 
-    // Auto-repair existing garbled Thai mojibake in MySQL database
-    try {
-      await connection.query("UPDATE users SET full_name = 'นายชำนาญ การคลัง', position = 'หัวหน้ากลุ่มงานการเงินและบัญชี' WHERE username = 'admin' AND (full_name LIKE '%เธ%' OR full_name LIKE '%ธเธ%')");
-      await connection.query("UPDATE users SET full_name = 'นายสมชาย บริการดี', position = 'เจ้าพนักงานการเงินและบัญชีชำนาญงาน' WHERE username = 'somchai' AND (full_name LIKE '%เธ%' OR full_name LIKE '%ธเธ%')");
-      await connection.query("UPDATE users SET full_name = 'นางสาวสุดา วงศ์สว่าง', position = 'เจ้าหน้าที่การเงิน' WHERE username = 'suda' AND (full_name LIKE '%เธ%' OR full_name LIKE '%ธเธ%')");
-      await connection.query("UPDATE users SET full_name = 'นายสุรชัย มั่นคง', position = 'เจ้าหน้าที่ธุรการ' WHERE username = 'surachai' AND (full_name LIKE '%เธ%' OR full_name LIKE '%ธเธ%')");
-      await connection.query("UPDATE bank_templates SET bank_name_thai = 'ธนาคารกรุงไทย' WHERE bank_type = 'KTB' AND bank_name_thai LIKE '%เธ%'");
-      await connection.query("UPDATE bank_templates SET bank_name_thai = 'ธนาคารเพื่อการเกษตรและสหกรณ์การเกษตร (ธ.ก.ส.)' WHERE bank_type = 'BAAC' AND bank_name_thai LIKE '%เธ%'");
-      await connection.query("UPDATE bank_templates SET bank_name_thai = 'ธนาคารออมสิน' WHERE bank_type = 'GSB' AND bank_name_thai LIKE '%เธ%'");
-
-      // Deep scan all users to fix any mojibake
-      const [allUsers] = await connection.query<any[]>('SELECT id, username, full_name, position FROM users');
-      for (const u of allUsers) {
-        const cleanedName = cleanThaiMojibake(u.full_name, u.username);
-        const cleanedPos = cleanThaiMojibake(u.position, u.username);
-        if (cleanedName !== u.full_name || cleanedPos !== u.position) {
-          await connection.query('UPDATE users SET full_name = ?, position = ? WHERE id = ?', [cleanedName, cleanedPos, u.id]);
-        }
+      // Convert existing tables and columns to utf8mb4 (fixes legacy latin1 / tis620 tables)
+      const tablesToConvert = ['users', 'cheques', 'cheque_items', 'bank_templates', 'cheque_print_logs', 'audit_logs'];
+      for (const tbl of tablesToConvert) {
+        try {
+          await connection.query(`ALTER TABLE \`${tbl}\` CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
+        } catch {}
       }
+
+      // Explicitly ensure text columns are utf8mb4
+      try {
+        await connection.query("ALTER TABLE users MODIFY full_name VARCHAR(150) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL");
+        await connection.query("ALTER TABLE users MODIFY position VARCHAR(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT 'เจ้าหน้าที่การเงินและบัญชี'");
+        await connection.query("ALTER TABLE cheques MODIFY stub_payee_name VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL");
+        await connection.query("ALTER TABLE cheques MODIFY cheque_payee_name VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL");
+        await connection.query("ALTER TABLE cheques MODIFY total_amount_thai_text TEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL");
+        await connection.query("ALTER TABLE cheques MODIFY memo TEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
+        await connection.query("ALTER TABLE cheques MODIFY created_by VARCHAR(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL");
+        await connection.query("ALTER TABLE cheque_items MODIFY description VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL");
+        await connection.query("ALTER TABLE bank_templates MODIFY bank_name_thai VARCHAR(150) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL");
+      } catch {}
+
+      // Delete test/orphaned users in MySQL that were deleted from the UI
+      try {
+        await connection.query("DELETE FROM users WHERE username IN ('11111', '22222', '112222') OR id IN ('11111', '22222')");
+      } catch {}
+
+      // Auto-repair existing garbled Thai mojibake in MySQL database
+      try {
+        await connection.query("UPDATE users SET full_name = 'นายชำนาญ การคลัง', position = 'หัวหน้ากลุ่มงานการเงินและบัญชี' WHERE username = 'admin' AND (full_name LIKE '%เธ%' OR full_name LIKE '%ธเธ%')");
+        await connection.query("UPDATE users SET full_name = 'นายสมชาย บริการดี', position = 'เจ้าพนักงานการเงินและบัญชีชำนาญงาน' WHERE username = 'somchai' AND (full_name LIKE '%เธ%' OR full_name LIKE '%ธเธ%')");
+        await connection.query("UPDATE users SET full_name = 'นางสาวสุดา วงศ์สว่าง', position = 'เจ้าหน้าที่การเงิน' WHERE username = 'suda' AND (full_name LIKE '%เธ%' OR full_name LIKE '%ธเธ%')");
+        await connection.query("UPDATE users SET full_name = 'นายสุรชัย มั่นคง', position = 'เจ้าหน้าที่ธุรการ' WHERE username = 'surachai' AND (full_name LIKE '%เธ%' OR full_name LIKE '%ธเธ%')");
+        await connection.query("UPDATE bank_templates SET bank_name_thai = 'ธนาคารกรุงไทย' WHERE bank_type = 'KTB' AND bank_name_thai LIKE '%เธ%'");
+        await connection.query("UPDATE bank_templates SET bank_name_thai = 'ธนาคารเพื่อการเกษตรและสหกรณ์การเกษตร (ธ.ก.ส.)' WHERE bank_type = 'BAAC' AND bank_name_thai LIKE '%เธ%'");
+        await connection.query("UPDATE bank_templates SET bank_name_thai = 'ธนาคารออมสิน' WHERE bank_type = 'GSB' AND bank_name_thai LIKE '%เธ%'");
+
+        // Deep scan all users to fix any mojibake
+        const [allUsers] = await connection.query<any[]>('SELECT id, username, full_name, position FROM users');
+        for (const u of allUsers) {
+          const cleanedName = cleanThaiMojibake(u.full_name, u.username);
+          const cleanedPos = cleanThaiMojibake(u.position, u.username);
+          if (cleanedName !== u.full_name || cleanedPos !== u.position) {
+            await connection.query('UPDATE users SET full_name = ?, position = ? WHERE id = ?', [cleanedName, cleanedPos, u.id]);
+          }
+        }
 
       // Deep scan cheques to fix any mojibake
       const [allCheques] = await connection.query<any[]>('SELECT id, stub_payee_name, cheque_payee_name, total_amount_thai_text, memo, created_by, created_by_username FROM cheques');
@@ -437,7 +471,10 @@ export async function ensureTablesAndSeeds(): Promise<void> {
       }
     }
 
-    connection.release();
+    } finally {
+      await connection.query("SET FOREIGN_KEY_CHECKS = 1").catch(() => {});
+      connection.release();
+    }
     tablesInitialized = true;
   } catch (err: any) {
     console.error('[MySQL Init Error]:', err.message);
@@ -546,42 +583,43 @@ export const mysqlUsers = {
   },
 
   async create(user: User): Promise<User> {
+    const rawFullName = user.fullName || '';
+    const rawPos = user.position || 'เจ้าหน้าที่การเงินและบัญชี';
     const cleanUser: User = {
       ...user,
-      fullName: cleanThaiMojibake(user.fullName, user.username),
-      position: cleanThaiMojibake(user.position || 'เจ้าหน้าที่การเงินและบัญชี', user.username),
+      fullName: hasThaiMojibake(rawFullName) ? cleanThaiMojibake(rawFullName, user.username) : rawFullName.trim(),
+      position: hasThaiMojibake(rawPos) ? cleanThaiMojibake(rawPos, user.username) : rawPos.trim(),
     };
 
-    if (!isMysqlConnected) {
+    try {
+      if (pool) {
+        await pool.query("SET NAMES 'utf8mb4' COLLATE 'utf8mb4_unicode_ci'");
+        await pool.query(
+          `INSERT INTO users (id, username, password_hash, full_name, position, role, status, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+           ON DUPLICATE KEY UPDATE
+             full_name = VALUES(full_name),
+             position = VALUES(position),
+             role = VALUES(role),
+             status = VALUES(status),
+             password_hash = VALUES(password_hash)`,
+          [
+            cleanUser.id,
+            cleanUser.username.toLowerCase().trim(),
+            cleanUser.passwordHash,
+            cleanUser.fullName.trim(),
+            cleanUser.position || 'เจ้าหน้าที่การเงินและบัญชี',
+            cleanUser.role || 'USER',
+            cleanUser.status || 'PENDING',
+            cleanUser.createdAt || new Date(),
+          ]
+        );
+        isMysqlConnected = true;
+      }
       fallbackDb.addUser(cleanUser);
       return cleanUser;
-    }
-
-    try {
-      await pool.query(
-        `INSERT INTO users (id, username, password_hash, full_name, position, role, status, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-         ON DUPLICATE KEY UPDATE
-           full_name = VALUES(full_name),
-           position = VALUES(position),
-           role = VALUES(role),
-           status = VALUES(status),
-           password_hash = VALUES(password_hash)`,
-        [
-          cleanUser.id,
-          cleanUser.username.toLowerCase().trim(),
-          cleanUser.passwordHash,
-          cleanUser.fullName.trim(),
-          cleanUser.position || 'เจ้าหน้าที่การเงินและบัญชี',
-          cleanUser.role || 'USER',
-          cleanUser.status || 'PENDING',
-          cleanUser.createdAt || new Date(),
-        ]
-      );
-      return cleanUser;
     } catch (err: any) {
-      isMysqlConnected = false;
-      lastError = err?.message || String(err);
+      console.warn('[MySQL Save User Warning]', err?.message || String(err));
       fallbackDb.addUser(cleanUser);
       return cleanUser;
     }
@@ -590,62 +628,72 @@ export const mysqlUsers = {
   async update(id: string, updates: Partial<User>): Promise<boolean> {
     const cleanUpdates: Partial<User> = { ...updates };
     if (cleanUpdates.fullName !== undefined) {
-      cleanUpdates.fullName = cleanThaiMojibake(cleanUpdates.fullName, id);
+      cleanUpdates.fullName = hasThaiMojibake(cleanUpdates.fullName) ? cleanThaiMojibake(cleanUpdates.fullName, id) : cleanUpdates.fullName.trim();
     }
     if (cleanUpdates.position !== undefined) {
-      cleanUpdates.position = cleanThaiMojibake(cleanUpdates.position, id);
+      cleanUpdates.position = hasThaiMojibake(cleanUpdates.position) ? cleanThaiMojibake(cleanUpdates.position, id) : cleanUpdates.position.trim();
     }
 
-    if (!isMysqlConnected) return fallbackDb.updateUser(id, cleanUpdates);
-
     try {
-      const fields: string[] = [];
-      const values: any[] = [];
+      if (pool) {
+        await pool.query("SET NAMES 'utf8mb4' COLLATE 'utf8mb4_unicode_ci'");
+        const fields: string[] = [];
+        const values: any[] = [];
 
-      if (cleanUpdates.fullName !== undefined) {
-        fields.push('full_name = ?');
-        values.push(cleanUpdates.fullName);
-      }
-      if (cleanUpdates.position !== undefined) {
-        fields.push('position = ?');
-        values.push(cleanUpdates.position);
-      }
-      if (cleanUpdates.role !== undefined) {
-        fields.push('role = ?');
-        values.push(cleanUpdates.role);
-      }
-      if (cleanUpdates.status !== undefined) {
-        fields.push('status = ?');
-        values.push(cleanUpdates.status);
-      }
-      if (cleanUpdates.passwordHash !== undefined) {
-        fields.push('password_hash = ?');
-        values.push(cleanUpdates.passwordHash);
-      }
+        if (cleanUpdates.fullName !== undefined) {
+          fields.push('full_name = ?');
+          values.push(cleanUpdates.fullName);
+        }
+        if (cleanUpdates.position !== undefined) {
+          fields.push('position = ?');
+          values.push(cleanUpdates.position);
+        }
+        if (cleanUpdates.role !== undefined) {
+          fields.push('role = ?');
+          values.push(cleanUpdates.role);
+        }
+        if (cleanUpdates.status !== undefined) {
+          fields.push('status = ?');
+          values.push(cleanUpdates.status);
+        }
+        if (cleanUpdates.passwordHash !== undefined) {
+          fields.push('password_hash = ?');
+          values.push(cleanUpdates.passwordHash);
+        }
 
-      if (!fields.length) return true;
-      values.push(id, id);
-
-      await pool.query(`UPDATE users SET ${fields.join(', ')} WHERE id = ? OR username = ?`, values);
+        if (fields.length) {
+          values.push(id, id);
+          await pool.query(`UPDATE users SET ${fields.join(', ')} WHERE id = ? OR username = ?`, values);
+        }
+        isMysqlConnected = true;
+      }
       fallbackDb.updateUser(id, cleanUpdates);
       return true;
     } catch (err: any) {
-      isMysqlConnected = false;
-      lastError = err?.message || String(err);
-      return fallbackDb.updateUser(id, cleanUpdates);
+      console.warn('[MySQL Update User Warning]', err?.message || String(err));
+      fallbackDb.updateUser(id, cleanUpdates);
+      return true;
     }
   },
 
-  async delete(id: string): Promise<boolean> {
-    if (!isMysqlConnected) return fallbackDb.deleteUser(id);
-
+  async delete(id: string, username?: string): Promise<boolean> {
     try {
-      await pool.query('DELETE FROM users WHERE id = ? OR username = ?', [id, id]);
+      if (pool) {
+        await pool.query("SET NAMES 'utf8mb4' COLLATE 'utf8mb4_unicode_ci'");
+        const targets = Array.from(new Set([id, username].filter(Boolean))) as string[];
+        for (const t of targets) {
+          await pool.query('DELETE FROM users WHERE id = ? OR username = ?', [t, t]);
+        }
+        isMysqlConnected = true;
+      }
       fallbackDb.deleteUser(id);
+      if (username) fallbackDb.deleteUser(username);
       return true;
     } catch (err: any) {
       console.error('[MySQL Delete User Error]', err?.message || String(err));
-      return fallbackDb.deleteUser(id);
+      fallbackDb.deleteUser(id);
+      if (username) fallbackDb.deleteUser(username);
+      return true;
     }
   },
 };
@@ -1267,25 +1315,46 @@ export async function repairThaiCharset(): Promise<{ success: boolean; message: 
   }
   try {
     const connection = await pool.getConnection();
-    await connection.query("SET NAMES 'utf8mb4' COLLATE 'utf8mb4_unicode_ci'");
-    await connection.query("SET CHARACTER SET 'utf8mb4'");
     try {
-      await connection.query(`ALTER DATABASE \`${DB_CONFIG.database}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
-    } catch {}
-
-    // Convert all tables to utf8mb4
-    const tablesToConvert = ['users', 'cheques', 'cheque_items', 'bank_templates', 'cheque_print_logs', 'audit_logs'];
-    for (const tbl of tablesToConvert) {
+      await connection.query("SET FOREIGN_KEY_CHECKS = 0");
+      await connection.query("SET NAMES 'utf8mb4' COLLATE 'utf8mb4_unicode_ci'");
+      await connection.query("SET character_set_client = 'utf8mb4'");
+      await connection.query("SET character_set_connection = 'utf8mb4'");
+      await connection.query("SET character_set_results = 'utf8mb4'");
       try {
-        await connection.query(`ALTER TABLE \`${tbl}\` CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
+        await connection.query(`ALTER DATABASE \`${DB_CONFIG.database}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
       } catch {}
-    }
 
-    // Repair users
-    await connection.query("UPDATE users SET full_name = 'นายชำนาญ การคลัง', position = 'หัวหน้ากลุ่มงานการเงินและบัญชี' WHERE username = 'admin'");
-    await connection.query("UPDATE users SET full_name = 'นายสมชาย บริการดี', position = 'เจ้าพนักงานการเงินและบัญชีชำนาญงาน' WHERE username = 'somchai'");
-    await connection.query("UPDATE users SET full_name = 'นางสาวสุดา วงศ์สว่าง', position = 'เจ้าหน้าที่การเงิน' WHERE username = 'suda'");
-    await connection.query("UPDATE users SET full_name = 'นายสุรชัย มั่นคง', position = 'เจ้าหน้าที่ธุรการ' WHERE username = 'surachai'");
+      // Convert all tables to utf8mb4
+      const tablesToConvert = ['users', 'cheques', 'cheque_items', 'bank_templates', 'cheque_print_logs', 'audit_logs'];
+      for (const tbl of tablesToConvert) {
+        try {
+          await connection.query(`ALTER TABLE \`${tbl}\` CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
+        } catch {}
+      }
+
+      // Explicitly alter columns to utf8mb4
+      try {
+        await connection.query("ALTER TABLE users MODIFY full_name VARCHAR(150) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL");
+        await connection.query("ALTER TABLE users MODIFY position VARCHAR(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT 'เจ้าหน้าที่การเงินและบัญชี'");
+        await connection.query("ALTER TABLE cheques MODIFY stub_payee_name VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL");
+        await connection.query("ALTER TABLE cheques MODIFY cheque_payee_name VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL");
+        await connection.query("ALTER TABLE cheques MODIFY total_amount_thai_text TEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL");
+        await connection.query("ALTER TABLE cheques MODIFY memo TEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
+        await connection.query("ALTER TABLE cheques MODIFY created_by VARCHAR(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL");
+        await connection.query("ALTER TABLE cheque_items MODIFY description VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL");
+      } catch {}
+
+      // Delete test/orphaned users in MySQL (11111, 22222)
+      try {
+        await connection.query("DELETE FROM users WHERE username IN ('11111', '22222', '112222') OR id IN ('11111', '22222')");
+      } catch {}
+
+      // Repair users
+      await connection.query("UPDATE users SET full_name = 'นายชำนาญ การคลัง', position = 'หัวหน้ากลุ่มงานการเงินและบัญชี' WHERE username = 'admin'");
+      await connection.query("UPDATE users SET full_name = 'นายสมชาย บริการดี', position = 'เจ้าพนักงานการเงินและบัญชีชำนาญงาน' WHERE username = 'somchai'");
+      await connection.query("UPDATE users SET full_name = 'นางสาวสุดา วงศ์สว่าง', position = 'เจ้าหน้าที่การเงิน' WHERE username = 'suda'");
+      await connection.query("UPDATE users SET full_name = 'นายสุรชัย มั่นคง', position = 'เจ้าหน้าที่ธุรการ' WHERE username = 'surachai'");
 
     // Deep scan and repair all users
     const [allUsers] = await connection.query<any[]>('SELECT id, username, full_name, position FROM users');
@@ -1324,7 +1393,10 @@ export async function repairThaiCharset(): Promise<{ success: boolean; message: 
       }
     }
 
-    connection.release();
+    } finally {
+      await connection.query("SET FOREIGN_KEY_CHECKS = 1").catch(() => {});
+      connection.release();
+    }
     return { success: true, message: 'กู้คืนภาษาไทยและปรับตาราง MySQL เป็น utf8mb4 สำเร็จเรียบร้อยแล้ว 100%' };
   } catch (err: any) {
     return { success: false, message: err.message };

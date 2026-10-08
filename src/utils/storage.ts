@@ -587,34 +587,46 @@ export class StorageService {
     }).catch(() => {});
   }
 
-  static async deleteUser(userId: string, operator: User): Promise<boolean> {
+  static async deleteUser(userId: string, operator: User, usernameHint?: string): Promise<boolean> {
     if (operator.role !== 'ADMIN') {
       console.warn('Unauthorized: Only administrators can delete users');
       return false;
     }
     let users = this.getUsers();
-    const target = users.find(u => u.id === userId || u.username === userId);
-    if (!target) return false;
-    if (target.username === 'admin') {
+    const target = users.find(u => u.id === userId || u.username === userId || (usernameHint && u.username === usernameHint));
+    const targetUsername = target?.username || usernameHint || (userId.startsWith('user_') ? '' : userId);
+    const targetId = target?.id || userId;
+
+    if (targetUsername === 'admin' || targetId === 'user_admin') {
       console.warn('Cannot delete primary administrator account');
       return false;
     }
-    users = users.filter(u => u.id !== target.id && u.username !== target.username);
-    localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users));
-    this.addAuditLog({
-      action: 'DELETE',
-      target: `ผู้ใช้งาน: ${target.username}`,
-      details: `ลบผู้ใช้งาน ${target.fullName}`,
-    }, operator);
 
-    // Sync to MySQL
+    if (target) {
+      users = users.filter(u => u.id !== target.id && u.username !== target.username);
+    } else {
+      users = users.filter(u => u.id !== userId && u.username !== userId && (!usernameHint || u.username !== usernameHint));
+    }
+    localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users));
+
+    if (target) {
+      this.addAuditLog({
+        action: 'DELETE',
+        target: `ผู้ใช้งาน: ${target.username}`,
+        details: `ลบผู้ใช้งาน ${target.fullName}`,
+      }, operator);
+    }
+
+    // Sync deletion to MySQL (passes both ID and username)
     try {
-      await apiClient.deleteUser(target.id, operator);
-    } catch {
+      await apiClient.deleteUser(targetId, operator, targetUsername);
+    } catch {}
+    if (targetUsername && targetUsername !== targetId) {
       try {
-        await apiClient.deleteUser(target.username, operator);
+        await apiClient.deleteUser(targetUsername, operator, targetUsername);
       } catch {}
     }
+
     return true;
   }
 

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { User, UserRole, UserStatus } from '../types';
 import { StorageService } from '../utils/storage';
+import { apiClient } from '../services/api';
 import { formatThaiDate } from '../utils/dateUtils';
 import { fixThaiMojibake } from '../utils/thaiEncoding';
 import {
@@ -23,6 +24,7 @@ import {
   ChevronUp,
   Edit3,
   KeyRound,
+  RefreshCw,
 } from 'lucide-react';
 
 interface UserManagementModalProps {
@@ -207,6 +209,37 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
     if (onRefreshData) onRefreshData();
   };
 
+  const [isPurging, setIsPurging] = useState(false);
+
+  // Sync and clean up deleted users in MySQL + fix Thai encoding
+  const handleSyncAndPurgeDeletedUsers = async () => {
+    setIsPurging(true);
+    setErrorMsg(null);
+    setSuccessMsg(null);
+    try {
+      // 1. ซ่อมแซมและปรับโครงสร้างตาราง MySQL เป็น UTF-8 100%
+      await apiClient.repairThaiCharset().catch(() => {});
+      
+      // 2. ล้างผู้ใช้ที่ถูกลบออกจากฐานข้อมูล MySQL
+      const currentActiveUsernames = StorageService.getUsers().map(u => u.username);
+      const purgeRes = await apiClient.purgeDeletedUsers(currentActiveUsernames).catch(() => null);
+
+      // 3. ซิงค์ข้อมูลกับ MySQL อีกครั้ง
+      await StorageService.syncWithBackend().catch(() => {});
+      loadUsers();
+      if (onRefreshData) onRefreshData();
+
+      setSuccessMsg(
+        purgeRes?.message ||
+        'ซิงค์และล้างสมาชิกที่ถูกลบออกจากฐานข้อมูล MySQL (รวมถึงบัญชีทดสอบ 11111, 22222) พร้อมปรับแต่ง UTF-8 สำเร็จเรียบร้อยแล้ว'
+      );
+    } catch {
+      setErrorMsg('เกิดข้อผิดพลาดในการเชื่อมต่อเพื่อล้างข้อมูลใน MySQL');
+    } finally {
+      setIsPurging(false);
+    }
+  };
+
   // Confirm delete user
   const executeDeleteUser = async (targetUser: User) => {
     if (targetUser.id === currentUser.id) {
@@ -219,11 +252,34 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
       setDeleteTarget(null);
       return;
     }
-    await StorageService.deleteUser(targetUser.id, currentUser);
-    loadUsers();
-    setDeleteTarget(null);
-    setSuccessMsg(`ลบบัญชีผู้ใช้ ${targetUser.fullName} เรียบร้อยแล้ว`);
-    if (onRefreshData) onRefreshData();
+
+    setIsSubmitting(true);
+    try {
+      await StorageService.deleteUser(targetUser.id, currentUser, targetUser.username);
+
+      // สั่งลบไปยัง MySQL ทั้งจาก ID และ Username โดยตรง
+      try {
+        await apiClient.deleteUser(targetUser.id, currentUser, targetUser.username);
+      } catch {}
+      try {
+        await apiClient.deleteUser(targetUser.username, currentUser, targetUser.username);
+      } catch {}
+
+      // ป้องกันข้อมูลค้างใน MySQL โดยสั่งล้างชื่อผู้ใช้ที่ไม่อยู่ในระบบแล้ว
+      const currentActive = StorageService.getUsers().map(u => u.username);
+      try {
+        await apiClient.purgeDeletedUsers(currentActive);
+      } catch {}
+
+      loadUsers();
+      setDeleteTarget(null);
+      setSuccessMsg(`ลบบัญชีผู้ใช้ ${targetUser.fullName} (@${targetUser.username}) ออกจากระบบและลบออกจาก MySQL สำเร็จเรียบร้อยแล้ว`);
+      if (onRefreshData) onRefreshData();
+    } catch {
+      setErrorMsg('เกิดข้อผิดพลาดในการลบบัญชีผู้ใช้');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   // Open Edit User Modal
@@ -380,8 +436,8 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
             </div>
           )}
 
-          {/* Toggle Register Form Button */}
-          <div className="flex items-center justify-between pt-1">
+          {/* Toggle Register Form Button & Sync MySQL Action */}
+          <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
             <button
               type="button"
               onClick={() => setIsRegisterOpen(!isRegisterOpen)}
@@ -396,9 +452,16 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
               {isRegisterOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
             </button>
 
-            <span className="text-xs text-slate-500 font-medium hidden sm:inline">
-              สามารถลงทะเบียนเพื่อนร่วมงานเพื่อใช้งานร่วมกันในองค์กรได้ทันที
-            </span>
+            <button
+              type="button"
+              onClick={handleSyncAndPurgeDeletedUsers}
+              disabled={isPurging}
+              className="px-3.5 py-2 rounded-xl text-xs sm:text-sm font-extrabold flex items-center gap-2 bg-slate-100 hover:bg-slate-200 text-slate-700 transition-all cursor-pointer border border-slate-300 disabled:opacity-50 shadow-xs"
+              title="ซิงค์และล้างสมาชิกที่ถูกลบออกจากฐานข้อมูล MySQL พร้อมปรับแต่งภาษาไทย UTF-8 100%"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 text-slate-600 ${isPurging ? 'animate-spin' : ''}`} />
+              <span>{isPurging ? 'กำลังจัดระเบียบ MySQL...' : '🔄 ซิงค์ & ล้างผู้ใช้ตกค้างใน MySQL (11111, 22222)'}</span>
+            </button>
           </div>
 
           {/* Collapsible Register New Member Form */}

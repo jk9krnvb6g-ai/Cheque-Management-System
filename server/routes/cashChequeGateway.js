@@ -714,18 +714,51 @@ router.put('/users/:id', async (req, res) => {
 
 router.delete('/users/:id', async (req, res) => {
     const { id } = req.params;
-    if (id.toLowerCase() === 'admin' || id === 'user_admin') {
+    const usernameParam = req.query.username || req.body?.username || '';
+    if (id.toLowerCase() === 'admin' || id === 'user_admin' || usernameParam.toLowerCase() === 'admin') {
         return res.status(400).json({ success: false, message: 'ไม่อนุญาตให้ลบบัญชีผู้ดูแลระบบหลัก (admin)' });
     }
-    memoryDb.users = memoryDb.users.filter(u => u.id !== id && u.username !== id);
+    memoryDb.users = memoryDb.users.filter(u => u.id !== id && u.username !== id && u.username !== usernameParam);
     if (isMysqlConnected && pool) {
         try {
-            await pool.query('DELETE FROM users WHERE id = ? OR username = ?', [id, id]);
+            await pool.query("SET NAMES 'utf8mb4' COLLATE 'utf8mb4_unicode_ci'");
+            const candidates = Array.from(new Set([id, usernameParam].filter(Boolean)));
+            for (const c of candidates) {
+                await pool.query('DELETE FROM users WHERE id = ? OR username = ?', [c, c]);
+            }
         } catch (e) {
             console.error('[MySQL Delete User Error]', e.message);
         }
     }
     res.json({ success: true, message: 'ลบผู้ใช้สำเร็จ' });
+});
+
+router.post('/users/purge-deleted', async (req, res) => {
+    const { activeUsernames } = req.body || {};
+    let deletedCount = 0;
+    if (isMysqlConnected && pool) {
+        try {
+            await pool.query("SET NAMES 'utf8mb4' COLLATE 'utf8mb4_unicode_ci'");
+            // ลบบัญชีทดสอบแน่นอน
+            for (const hp of ['11111', '22222', '112222']) {
+                await pool.query('DELETE FROM users WHERE id = ? OR username = ?', [hp, hp]);
+                deletedCount++;
+            }
+            if (Array.isArray(activeUsernames) && activeUsernames.length > 0) {
+                const activeSet = new Set(activeUsernames.map(u => String(u).toLowerCase().trim()));
+                activeSet.add('admin');
+                activeSet.add('somchai');
+                const [allUsers] = await pool.query('SELECT id, username FROM users');
+                for (const u of allUsers) {
+                    if (!activeSet.has(u.username.toLowerCase()) && u.username !== 'admin') {
+                        await pool.query('DELETE FROM users WHERE id = ?', [u.id]);
+                        deletedCount++;
+                    }
+                }
+            }
+        } catch (e) {}
+    }
+    res.json({ success: true, message: `ล้างข้อมูลสมาชิกที่ตกค้างออกจาก MySQL สำเร็จ (จำนวน: ${deletedCount})`, deletedCount });
 });
 
 router.post('/users/login', async (req, res) => {

@@ -311,14 +311,29 @@ export const apiClient = {
     return res.data;
   },
 
-  async deleteUser(id: string, operator: User): Promise<boolean> {
-    const res = await request<{ success: boolean }>(`/users/${encodeURIComponent(id)}`, {
+  async deleteUser(id: string, operator: User, username?: string): Promise<boolean> {
+    const query = username ? `?username=${encodeURIComponent(username)}` : '';
+    const res = await request<{ success: boolean }>(`/users/${encodeURIComponent(id)}${query}`, {
       method: 'DELETE',
       headers: {
         'x-operator': JSON.stringify(operator),
       },
+      body: JSON.stringify({ id, username }),
     });
     return res.success;
+  },
+
+  async purgeDeletedUsers(activeUsernames: string[]): Promise<{ success: boolean; deletedCount: number; message: string }> {
+    return await request<{ success: boolean; deletedCount: number; message: string }>('/users/purge-deleted', {
+      method: 'POST',
+      body: JSON.stringify({ activeUsernames }),
+    });
+  },
+
+  async repairThaiCharset(): Promise<{ success: boolean; message: string }> {
+    return await request<{ success: boolean; message: string }>('/db/repair', {
+      method: 'POST',
+    });
   },
 
   // 5. Logs (Print & Audit)

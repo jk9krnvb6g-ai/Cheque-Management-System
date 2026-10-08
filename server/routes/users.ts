@@ -157,9 +157,10 @@ userRouter.put('/:id', async (req: Request, res: Response) => {
   }
 });
 
-// DELETE /api/users/:id - ลบผู้ใช้ใน MySQL
+// DELETE /api/users/:id - ลบผู้ใช้ใน MySQL (รองรับทั้ง id และ username)
 userRouter.delete('/:id', async (req: Request, res: Response) => {
   const { id } = req.params;
+  const usernameParam = (req.query.username as string) || (req.body?.username as string) || '';
   const operatorHeader = req.headers['x-operator'];
   let operator: any = null;
   if (operatorHeader) {
@@ -169,18 +170,32 @@ userRouter.delete('/:id', async (req: Request, res: Response) => {
   }
 
   try {
+    if (id.toLowerCase() === 'admin' || id === 'user_admin' || usernameParam.toLowerCase() === 'admin') {
+      return res.status(400).json({ success: false, message: 'ไม่อนุญาตให้ลบบัญชีผู้ดูแลระบบหลัก (admin)' });
+    }
+
     let existing = await mysqlUsers.findById(id);
+    if (!existing && usernameParam) {
+      existing = await mysqlUsers.findByUsername(usernameParam);
+    }
     if (!existing) {
       existing = await mysqlUsers.findByUsername(id);
     }
 
-    if (existing?.username === 'admin' || id.toLowerCase() === 'admin' || id === 'user_admin') {
+    if (existing?.username === 'admin') {
       return res.status(400).json({ success: false, message: 'ไม่อนุญาตให้ลบบัญชีผู้ดูแลระบบหลัก (admin)' });
     }
 
-    const targetId = existing?.id || id;
-    await mysqlUsers.delete(targetId);
-    await mysqlUsers.delete(id);
+    // ลบด้วยทุก identifier ที่เกี่ยวข้อง (ทั้ง ID และ Username)
+    const candidates = new Set<string>();
+    if (id) candidates.add(id);
+    if (usernameParam) candidates.add(usernameParam);
+    if (existing?.id) candidates.add(existing.id);
+    if (existing?.username) candidates.add(existing.username);
+
+    for (const c of candidates) {
+      await mysqlUsers.delete(c, usernameParam || existing?.username);
+    }
 
     if (operator && existing) {
       await mysqlAuditLogs.add({
@@ -194,7 +209,44 @@ userRouter.delete('/:id', async (req: Request, res: Response) => {
       });
     }
 
-    res.json({ success: true, message: 'ลบผู้ใช้สำเร็จ' });
+    res.json({ success: true, message: 'ลบผู้ใช้สำเร็จ', deletedUser: existing });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// POST /api/users/purge-deleted - ล้างสมาชิกที่ถูกลบออกจาก MySQL (เช่น บัญชีทดสอบ 11111, 22222)
+userRouter.post('/purge-deleted', async (req: Request, res: Response) => {
+  const { activeUsernames } = req.body || {};
+  try {
+    const allUsers = await mysqlUsers.getAll();
+    let deletedCount = 0;
+
+    // ลบบัญชีทดสอบที่ถูกลบออกจากระบบอย่างแน่นอน
+    const hardcodedPurge = ['11111', '22222', '112222'];
+    for (const hp of hardcodedPurge) {
+      await mysqlUsers.delete(hp, hp);
+      deletedCount++;
+    }
+
+    if (Array.isArray(activeUsernames) && activeUsernames.length > 0) {
+      const activeSet = new Set(activeUsernames.map(u => String(u).toLowerCase().trim()));
+      activeSet.add('admin');
+      activeSet.add('somchai');
+
+      for (const u of allUsers) {
+        if (!activeSet.has(u.username.toLowerCase()) && u.username !== 'admin') {
+          await mysqlUsers.delete(u.id, u.username);
+          deletedCount++;
+        }
+      }
+    }
+
+    res.json({
+      success: true,
+      message: `ล้างข้อมูลสมาชิกที่ถูกลบออกจาก MySQL เรียบร้อยแล้ว (จำนวนที่ลบ: ${deletedCount})`,
+      deletedCount,
+    });
   } catch (err: any) {
     res.status(500).json({ success: false, message: err.message });
   }

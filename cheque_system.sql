@@ -20,12 +20,33 @@ COLLATE utf8mb4_unicode_ci;
 
 USE `cheque_system`;
 
--- บังคับการส่งข้อมูลด้วย UTF-8 ภาษาไทยสมบูรณ์แบบ
-SET NAMES utf8mb4;
-SET CHARACTER SET utf8mb4;
+-- บังคับการส่งข้อมูลด้วย UTF-8 ภาษาไทยสมบูรณ์แบบ 100%
+SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci;
 SET character_set_client = utf8mb4;
 SET character_set_connection = utf8mb4;
 SET character_set_results = utf8mb4;
+
+-- ----------------------------------------------------------------------------------------------------
+-- สคริปต์ปรับปรุงและซ่อมแซมตารางเดิมให้เป็น UTF-8 (utf8mb4) และลบผู้ใช้ทดสอบที่ตกค้าง (11111, 22222)
+-- ----------------------------------------------------------------------------------------------------
+SET FOREIGN_KEY_CHECKS = 0;
+ALTER DATABASE `cheque_system` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- แปลงตารางทุกตารางเป็น utf8mb4_unicode_ci
+ALTER TABLE `users` CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+ALTER TABLE `cheques` CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+ALTER TABLE `cheque_items` CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+ALTER TABLE `bank_templates` CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+ALTER TABLE `cheque_print_logs` CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+ALTER TABLE `audit_logs` CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- ล้างข้อมูลสมาชิกทดสอบที่ถูกลบออกจากระบบ
+DELETE FROM `users` WHERE `username` IN ('11111', '22222', '112222') OR `id` IN ('11111', '22222');
+
+-- ซ่อมแซมข้อมูลเริ่มต้น
+UPDATE `users` SET `full_name` = 'นายชำนาญ การคลัง', `position` = 'หัวหน้ากลุ่มงานการเงินและบัญชี' WHERE `username` = 'admin';
+UPDATE `users` SET `full_name` = 'นายสมชาย บริการดี', `position` = 'เจ้าพนักงานการเงินและบัญชีชำนาญงาน' WHERE `username` = 'somchai';
+SET FOREIGN_KEY_CHECKS = 1;
 
 -- ====================================================================================================
 -- ตารางที่ 1: `users`
