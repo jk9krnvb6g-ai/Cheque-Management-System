@@ -4,16 +4,6 @@
 -- รหัสชุดอักขระ: UTF-8 Unicode (utf8mb4_unicode_ci) รองรับภาษาไทย 100%
 -- ====================================================================================================
 
--- ----------------------------------------------------------------------------------------------------
--- สรุปโครงสร้างตารางทั้ง 6 ตารางในระบบ:
--- ตารางที่ 1: `users`             -> เก็บข้อมูลสมาชิกและผู้ใช้งานระบบ (Admin, เจ้าหน้าที่การเงิน)
--- ตารางที่ 2: `cheques`           -> เก็บข้อมูลหลักของเช็คแต่ละฉบับ เลขฎีกา ยอดเงิน ภาษี และผู้รับเงิน
--- ตารางที่ 3: `cheque_items`      -> เก็บรายการฎีกาย่อยหรือรายการค่าใช้จ่าย (1 เช็คมีได้หลายรายการ)
--- ตารางที่ 4: `cheque_print_logs` -> บันทึกประวัติการสั่งพิมพ์เช็คทุกครั้ง (ห้ามลบ/ห้ามแก้ไข เพื่อความปลอดภัย)
--- ตารางที่ 5: `audit_logs`        -> บันทึกกิจกรรมการใช้งานระบบ (ใคร ทำอะไร เมื่อไหร่ เช่น ล็อกอิน ลบ แก้ไข)
--- ตารางที่ 6: `bank_templates`    -> เก็บพิกัดและขนาดการพิมพ์เช็คของแต่ละธนาคาร (KTB, ธ.ก.ส., ออมสิน)
--- ----------------------------------------------------------------------------------------------------
-
 CREATE DATABASE IF NOT EXISTS `cheque_system` 
 DEFAULT CHARACTER SET utf8mb4 
 COLLATE utf8mb4_unicode_ci;
@@ -25,28 +15,7 @@ SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci;
 SET character_set_client = utf8mb4;
 SET character_set_connection = utf8mb4;
 SET character_set_results = utf8mb4;
-
--- ----------------------------------------------------------------------------------------------------
--- สคริปต์ปรับปรุงและซ่อมแซมตารางเดิมให้เป็น UTF-8 (utf8mb4) และลบผู้ใช้ทดสอบที่ตกค้าง (11111, 22222)
--- ----------------------------------------------------------------------------------------------------
 SET FOREIGN_KEY_CHECKS = 0;
-ALTER DATABASE `cheque_system` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-
--- แปลงตารางทุกตารางเป็น utf8mb4_unicode_ci
-ALTER TABLE `users` CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-ALTER TABLE `cheques` CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-ALTER TABLE `cheque_items` CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-ALTER TABLE `bank_templates` CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-ALTER TABLE `cheque_print_logs` CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-ALTER TABLE `audit_logs` CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-
--- ล้างข้อมูลสมาชิกทดสอบที่ถูกลบออกจากระบบ
-DELETE FROM `users` WHERE `username` IN ('11111', '22222', '112222') OR `id` IN ('11111', '22222');
-
--- ซ่อมแซมข้อมูลเริ่มต้น
-UPDATE `users` SET `full_name` = 'นายชำนาญ การคลัง', `position` = 'หัวหน้ากลุ่มงานการเงินและบัญชี' WHERE `username` = 'admin';
-UPDATE `users` SET `full_name` = 'นายสมชาย บริการดี', `position` = 'เจ้าพนักงานการเงินและบัญชีชำนาญงาน' WHERE `username` = 'somchai';
-SET FOREIGN_KEY_CHECKS = 1;
 
 -- ====================================================================================================
 -- ตารางที่ 1: `users`
@@ -203,3 +172,21 @@ VALUES
 ('BAAC', 'ธนาคารเพื่อการเกษตรและสหกรณ์การเกษตร (ธ.ก.ส.)', 'BAAC Bank', '#2e7d32', 241.00, 90.00, '{"bankType":"BAAC","bankNameThai":"ธนาคารเพื่อการเกษตรและสหกรณ์การเกษตร (ธ.ก.ส.)","widthMm":241,"heightMm":90,"fields":{"date":{"x":186,"y":5,"fontSizePt":12.5},"payee":{"x":85,"y":23.5,"fontSizePt":12.5},"amountText":{"x":98,"y":32.5,"fontSizePt":12},"amountNumber":{"x":184,"y":37.5,"fontSizePt":11}}}'),
 ('GSB', 'ธนาคารออมสิน', 'Government Savings Bank (GSB)', '#e91e63', 241.00, 90.00, '{"bankType":"GSB","bankNameThai":"ธนาคารออมสิน","widthMm":241,"heightMm":90,"fields":{"date":{"x":188,"y":5.5,"fontSizePt":12.5},"payee":{"x":86,"y":24,"fontSizePt":12.5},"amountText":{"x":99,"y":33,"fontSizePt":12},"amountNumber":{"x":185,"y":38,"fontSizePt":11}}}')
 ON DUPLICATE KEY UPDATE `bank_name_thai` = VALUES(`bank_name_thai`);
+
+-- ----------------------------------------------------------------------------------------------------
+-- สคริปต์ปรับปรุงและซ่อมแซมตารางให้เป็น UTF-8 (utf8mb4) สมบูรณ์แบบ และลบสมาชิกทดสอบที่ตกค้าง
+-- ----------------------------------------------------------------------------------------------------
+ALTER DATABASE `cheque_system` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+ALTER TABLE `users` CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+ALTER TABLE `cheques` CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+ALTER TABLE `cheque_items` CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+ALTER TABLE `bank_templates` CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+ALTER TABLE `cheque_print_logs` CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+ALTER TABLE `audit_logs` CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- ล้างข้อมูลสมาชิกทดสอบที่ถูกลบออกจากระบบ (เช่น 11111, 22222)
+DELETE FROM `users` WHERE `username` IN ('11111', '22222', '112222') OR `id` IN ('11111', '22222');
+
+SET FOREIGN_KEY_CHECKS = 1;
+

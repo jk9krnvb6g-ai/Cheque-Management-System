@@ -129,8 +129,6 @@ export const ChequePrintModal: React.FC<ChequePrintModalProps> = ({
     }
   }, [isOpen, selectedBank, activeCheque.id, activeCheque.printCount, batchIndex]);
 
-  if (!isOpen) return null;
-
   const currentTemplate = templates[selectedBank] || Object.values(templates)[0];
   const isReprint = activeCheque.printCount > 0;
 
@@ -322,6 +320,8 @@ export const ChequePrintModal: React.FC<ChequePrintModalProps> = ({
       top: `${field.y + offsetY}mm`,
     };
   };
+
+  if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4">

@@ -240,6 +240,117 @@ export async function ensureTablesAndSeeds(): Promise<void> {
         await connection.query(`ALTER DATABASE \`${DB_CONFIG.database}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
       } catch {}
 
+      // 1. Table users - สร้างตารางก่อนเป็นอันดับแรก
+      await connection.query(`
+        CREATE TABLE IF NOT EXISTS users (
+          id VARCHAR(64) NOT NULL PRIMARY KEY,
+          username VARCHAR(50) NOT NULL UNIQUE,
+          password_hash VARCHAR(255) NOT NULL,
+          full_name VARCHAR(150) NOT NULL,
+          position VARCHAR(100) DEFAULT 'เจ้าหน้าที่การเงินและบัญชี',
+          role ENUM('ADMIN', 'USER') NOT NULL DEFAULT 'USER',
+          status ENUM('ACTIVE', 'PENDING', 'INACTIVE') NOT NULL DEFAULT 'PENDING',
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+      `);
+
+      // 2. Table cheques
+      await connection.query(`
+        CREATE TABLE IF NOT EXISTS cheques (
+          id VARCHAR(64) NOT NULL PRIMARY KEY,
+          cheque_number VARCHAR(20) DEFAULT NULL,
+          stub_date DATE NOT NULL,
+          cheque_date DATE DEFAULT NULL,
+          fiscal_year INT NOT NULL,
+          stub_payee_name VARCHAR(255) NOT NULL,
+          cheque_payee_name VARCHAR(255) NOT NULL,
+          dika_number VARCHAR(50) DEFAULT NULL,
+          bank_account_no VARCHAR(50) DEFAULT NULL,
+          total_amount DECIMAL(14,2) NOT NULL DEFAULT 0.00,
+          total_amount_thai_text TEXT NOT NULL,
+          withholding_tax_percent DECIMAL(5,2) DEFAULT 0.00,
+          withholding_tax_amount DECIMAL(14,2) DEFAULT 0.00,
+          net_paid_amount DECIMAL(14,2) NOT NULL DEFAULT 0.00,
+          memo TEXT DEFAULT NULL,
+          status ENUM('PENDING', 'ISSUED', 'VOID') NOT NULL DEFAULT 'PENDING',
+          void_reason VARCHAR(255) DEFAULT NULL,
+          void_at TIMESTAMP NULL DEFAULT NULL,
+          void_by VARCHAR(100) DEFAULT NULL,
+          created_by VARCHAR(100) NOT NULL,
+          created_by_username VARCHAR(50) NOT NULL,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          updated_by VARCHAR(100) DEFAULT NULL,
+          updated_at TIMESTAMP NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+          print_count INT NOT NULL DEFAULT 0,
+          last_printed_at TIMESTAMP NULL DEFAULT NULL,
+          last_printed_by VARCHAR(100) DEFAULT NULL,
+          last_bank_type VARCHAR(20) DEFAULT 'KTB',
+          INDEX idx_cheques_fiscal (fiscal_year),
+          INDEX idx_cheques_status (status),
+          INDEX idx_cheques_dika (dika_number)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+      `);
+
+      // 3. Table cheque_items
+      await connection.query(`
+        CREATE TABLE IF NOT EXISTS cheque_items (
+          id VARCHAR(64) NOT NULL PRIMARY KEY,
+          cheque_id VARCHAR(64) NOT NULL,
+          description VARCHAR(255) NOT NULL,
+          amount DECIMAL(14,2) NOT NULL DEFAULT 0.00,
+          INDEX idx_items_cheque_id (cheque_id),
+          CONSTRAINT fk_items_cheque FOREIGN KEY (cheque_id) REFERENCES cheques (id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+      `);
+
+      // 4. Table cheque_print_logs
+      await connection.query(`
+        CREATE TABLE IF NOT EXISTS cheque_print_logs (
+          id VARCHAR(64) NOT NULL PRIMARY KEY,
+          cheque_id VARCHAR(64) NOT NULL,
+          cheque_number VARCHAR(20) DEFAULT NULL,
+          dika_number VARCHAR(50) DEFAULT NULL,
+          cheque_payee_name VARCHAR(255) NOT NULL,
+          total_amount DECIMAL(14,2) NOT NULL DEFAULT 0.00,
+          bank_type VARCHAR(20) NOT NULL,
+          print_no INT NOT NULL DEFAULT 1,
+          printed_by VARCHAR(100) NOT NULL,
+          printed_by_username VARCHAR(50) NOT NULL,
+          printed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          reprint_reason VARCHAR(255) DEFAULT NULL,
+          reprint_note TEXT DEFAULT NULL,
+          INDEX idx_print_cheque (cheque_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+      `);
+
+      // 5. Table audit_logs
+      await connection.query(`
+        CREATE TABLE IF NOT EXISTS audit_logs (
+          id VARCHAR(64) NOT NULL PRIMARY KEY,
+          timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          username VARCHAR(50) NOT NULL,
+          user_full_name VARCHAR(150) NOT NULL,
+          action VARCHAR(30) NOT NULL,
+          target VARCHAR(255) NOT NULL,
+          details TEXT NOT NULL,
+          INDEX idx_audit_time (timestamp)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+      `);
+
+      // 6. Table bank_templates
+      await connection.query(`
+        CREATE TABLE IF NOT EXISTS bank_templates (
+          bank_type VARCHAR(20) NOT NULL PRIMARY KEY,
+          bank_name_thai VARCHAR(100) NOT NULL,
+          bank_name_eng VARCHAR(100) NOT NULL,
+          bank_color VARCHAR(20) NOT NULL DEFAULT '#00a5e5',
+          width_mm DECIMAL(6,2) NOT NULL DEFAULT 241.00,
+          height_mm DECIMAL(6,2) NOT NULL DEFAULT 90.00,
+          config_json LONGTEXT NOT NULL,
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+      `);
+
       // Convert existing tables and columns to utf8mb4 (fixes legacy latin1 / tis620 tables)
       const tablesToConvert = ['users', 'cheques', 'cheque_items', 'bank_templates', 'cheque_print_logs', 'audit_logs'];
       for (const tbl of tablesToConvert) {
@@ -286,133 +397,22 @@ export async function ensureTablesAndSeeds(): Promise<void> {
           }
         }
 
-      // Deep scan cheques to fix any mojibake
-      const [allCheques] = await connection.query<any[]>('SELECT id, stub_payee_name, cheque_payee_name, total_amount_thai_text, memo, created_by, created_by_username FROM cheques');
-      for (const c of allCheques) {
-        const cleanedStub = cleanThaiMojibake(c.stub_payee_name);
-        const cleanedPayee = cleanThaiMojibake(c.cheque_payee_name);
-        const cleanedText = cleanThaiMojibake(c.total_amount_thai_text);
-        const cleanedMemo = c.memo ? cleanThaiMojibake(c.memo) : c.memo;
-        const cleanedCreated = cleanThaiMojibake(c.created_by, c.created_by_username);
-        if (cleanedStub !== c.stub_payee_name || cleanedPayee !== c.cheque_payee_name || cleanedText !== c.total_amount_thai_text || cleanedCreated !== c.created_by) {
-          await connection.query(
-            'UPDATE cheques SET stub_payee_name = ?, cheque_payee_name = ?, total_amount_thai_text = ?, memo = ?, created_by = ? WHERE id = ?',
-            [cleanedStub, cleanedPayee, cleanedText, cleanedMemo, cleanedCreated, c.id]
-          );
+        // Deep scan cheques to fix any mojibake
+        const [allCheques] = await connection.query<any[]>('SELECT id, stub_payee_name, cheque_payee_name, total_amount_thai_text, memo, created_by, created_by_username FROM cheques');
+        for (const c of allCheques) {
+          const cleanedStub = cleanThaiMojibake(c.stub_payee_name);
+          const cleanedPayee = cleanThaiMojibake(c.cheque_payee_name);
+          const cleanedText = cleanThaiMojibake(c.total_amount_thai_text);
+          const cleanedMemo = c.memo ? cleanThaiMojibake(c.memo) : c.memo;
+          const cleanedCreated = cleanThaiMojibake(c.created_by, c.created_by_username);
+          if (cleanedStub !== c.stub_payee_name || cleanedPayee !== c.cheque_payee_name || cleanedText !== c.total_amount_thai_text || cleanedCreated !== c.created_by) {
+            await connection.query(
+              'UPDATE cheques SET stub_payee_name = ?, cheque_payee_name = ?, total_amount_thai_text = ?, memo = ?, created_by = ? WHERE id = ?',
+              [cleanedStub, cleanedPayee, cleanedText, cleanedMemo, cleanedCreated, c.id]
+            );
+          }
         }
-      }
-    } catch {}
-
-    // 1. Table users
-    await connection.query(`
-      CREATE TABLE IF NOT EXISTS users (
-        id VARCHAR(64) NOT NULL PRIMARY KEY,
-        username VARCHAR(50) NOT NULL UNIQUE,
-        password_hash VARCHAR(255) NOT NULL,
-        full_name VARCHAR(150) NOT NULL,
-        position VARCHAR(100) DEFAULT 'เจ้าหน้าที่การเงินและบัญชี',
-        role ENUM('ADMIN', 'USER') NOT NULL DEFAULT 'USER',
-        status ENUM('ACTIVE', 'PENDING', 'INACTIVE') NOT NULL DEFAULT 'PENDING',
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-    `);
-
-    // 2. Table cheques
-    await connection.query(`
-      CREATE TABLE IF NOT EXISTS cheques (
-        id VARCHAR(64) NOT NULL PRIMARY KEY,
-        cheque_number VARCHAR(20) DEFAULT NULL,
-        stub_date DATE NOT NULL,
-        cheque_date DATE DEFAULT NULL,
-        fiscal_year INT NOT NULL,
-        stub_payee_name VARCHAR(255) NOT NULL,
-        cheque_payee_name VARCHAR(255) NOT NULL,
-        dika_number VARCHAR(50) DEFAULT NULL,
-        bank_account_no VARCHAR(50) DEFAULT NULL,
-        total_amount DECIMAL(14,2) NOT NULL DEFAULT 0.00,
-        total_amount_thai_text TEXT NOT NULL,
-        withholding_tax_percent DECIMAL(5,2) DEFAULT 0.00,
-        withholding_tax_amount DECIMAL(14,2) DEFAULT 0.00,
-        net_paid_amount DECIMAL(14,2) NOT NULL DEFAULT 0.00,
-        memo TEXT DEFAULT NULL,
-        status ENUM('PENDING', 'ISSUED', 'VOID') NOT NULL DEFAULT 'PENDING',
-        void_reason VARCHAR(255) DEFAULT NULL,
-        void_at TIMESTAMP NULL DEFAULT NULL,
-        void_by VARCHAR(100) DEFAULT NULL,
-        created_by VARCHAR(100) NOT NULL,
-        created_by_username VARCHAR(50) NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_by VARCHAR(100) DEFAULT NULL,
-        updated_at TIMESTAMP NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
-        print_count INT NOT NULL DEFAULT 0,
-        last_printed_at TIMESTAMP NULL DEFAULT NULL,
-        last_printed_by VARCHAR(100) DEFAULT NULL,
-        last_bank_type VARCHAR(20) DEFAULT 'KTB',
-        INDEX idx_cheques_fiscal (fiscal_year),
-        INDEX idx_cheques_status (status),
-        INDEX idx_cheques_dika (dika_number)
-      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-    `);
-
-    // 3. Table cheque_items
-    await connection.query(`
-      CREATE TABLE IF NOT EXISTS cheque_items (
-        id VARCHAR(64) NOT NULL PRIMARY KEY,
-        cheque_id VARCHAR(64) NOT NULL,
-        description VARCHAR(255) NOT NULL,
-        amount DECIMAL(14,2) NOT NULL DEFAULT 0.00,
-        INDEX idx_items_cheque_id (cheque_id),
-        CONSTRAINT fk_items_cheque FOREIGN KEY (cheque_id) REFERENCES cheques (id) ON DELETE CASCADE
-      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-    `);
-
-    // 4. Table cheque_print_logs
-    await connection.query(`
-      CREATE TABLE IF NOT EXISTS cheque_print_logs (
-        id VARCHAR(64) NOT NULL PRIMARY KEY,
-        cheque_id VARCHAR(64) NOT NULL,
-        cheque_number VARCHAR(20) DEFAULT NULL,
-        dika_number VARCHAR(50) DEFAULT NULL,
-        cheque_payee_name VARCHAR(255) NOT NULL,
-        total_amount DECIMAL(14,2) NOT NULL DEFAULT 0.00,
-        bank_type VARCHAR(20) NOT NULL,
-        print_no INT NOT NULL DEFAULT 1,
-        printed_by VARCHAR(100) NOT NULL,
-        printed_by_username VARCHAR(50) NOT NULL,
-        printed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        reprint_reason VARCHAR(255) DEFAULT NULL,
-        reprint_note TEXT DEFAULT NULL,
-        INDEX idx_print_cheque (cheque_id)
-      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-    `);
-
-    // 5. Table audit_logs
-    await connection.query(`
-      CREATE TABLE IF NOT EXISTS audit_logs (
-        id VARCHAR(64) NOT NULL PRIMARY KEY,
-        timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        username VARCHAR(50) NOT NULL,
-        user_full_name VARCHAR(150) NOT NULL,
-        action VARCHAR(30) NOT NULL,
-        target VARCHAR(255) NOT NULL,
-        details TEXT NOT NULL,
-        INDEX idx_audit_time (timestamp)
-      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-    `);
-
-    // 6. Table bank_templates
-    await connection.query(`
-      CREATE TABLE IF NOT EXISTS bank_templates (
-        bank_type VARCHAR(20) NOT NULL PRIMARY KEY,
-        bank_name_thai VARCHAR(100) NOT NULL,
-        bank_name_eng VARCHAR(100) NOT NULL,
-        bank_color VARCHAR(20) NOT NULL DEFAULT '#00a5e5',
-        width_mm DECIMAL(6,2) NOT NULL DEFAULT 241.00,
-        height_mm DECIMAL(6,2) NOT NULL DEFAULT 90.00,
-        config_json LONGTEXT NOT NULL,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-    `);
+      } catch {}
 
     // Seed users if empty
     const [userRows] = await connection.query<any[]>('SELECT COUNT(*) as cnt FROM users');

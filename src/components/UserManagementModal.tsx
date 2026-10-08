@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { User, UserRole, UserStatus } from '../types';
 import { StorageService } from '../utils/storage';
 import { apiClient } from '../services/api';
@@ -75,10 +75,20 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
   const [editNewPassword, setEditNewPassword] = useState('');
   const [showEditPassword, setShowEditPassword] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
+  const [isPurging, setIsPurging] = useState(false);
 
-  const loadUsers = () => {
+  const loadUsers = useCallback(async () => {
     setUsers(StorageService.getUsers());
-  };
+    try {
+      const remoteUsers = await apiClient.getUsers();
+      if (remoteUsers && Array.isArray(remoteUsers) && remoteUsers.length > 0) {
+        await StorageService.syncWithBackend().catch(() => {});
+        setUsers(StorageService.getUsers());
+      }
+    } catch {
+      // Backend offline or unreachable, keep local data
+    }
+  }, []);
 
   useEffect(() => {
     if (isOpen) {
@@ -86,7 +96,7 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
       setErrorMsg(null);
       setSuccessMsg(null);
     }
-  }, [isOpen]);
+  }, [isOpen, loadUsers]);
 
   if (!isOpen) return null;
 
@@ -209,8 +219,6 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
     if (onRefreshData) onRefreshData();
   };
 
-  const [isPurging, setIsPurging] = useState(false);
-
   // Sync and clean up deleted users in MySQL + fix Thai encoding
   const handleSyncAndPurgeDeletedUsers = async () => {
     setIsPurging(true);
@@ -271,7 +279,7 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
         await apiClient.purgeDeletedUsers(currentActive);
       } catch {}
 
-      loadUsers();
+      await loadUsers();
       setDeleteTarget(null);
       setSuccessMsg(`ลบบัญชีผู้ใช้ ${targetUser.fullName} (@${targetUser.username}) ออกจากระบบและลบออกจาก MySQL สำเร็จเรียบร้อยแล้ว`);
       if (onRefreshData) onRefreshData();
