@@ -193,8 +193,13 @@ userRouter.delete('/:id', async (req: Request, res: Response) => {
     if (existing?.id) candidates.add(existing.id);
     if (existing?.username) candidates.add(existing.username);
 
+    let deletedFromMysql = false;
+    let deleteError: string | undefined;
+
     for (const c of candidates) {
-      await mysqlUsers.delete(c, usernameParam || existing?.username);
+      const resDel = await mysqlUsers.delete(c, usernameParam || existing?.username);
+      if (resDel.inMysql) deletedFromMysql = true;
+      if (resDel.error) deleteError = resDel.error;
     }
 
     if (operator && existing) {
@@ -209,7 +214,13 @@ userRouter.delete('/:id', async (req: Request, res: Response) => {
       });
     }
 
-    res.json({ success: true, message: 'ลบผู้ใช้สำเร็จ', deletedUser: existing });
+    res.json({
+      success: true,
+      inMysql: deletedFromMysql,
+      error: deleteError,
+      message: deletedFromMysql ? 'ลบผู้ใช้จากฐานข้อมูล MySQL สำเร็จ' : 'ลบจากหน่วยความจำแล้ว (ยังไม่ได้ลบใน MySQL หรือ MySQL ออฟไลน์)',
+      deletedUser: existing
+    });
   } catch (err: any) {
     res.status(500).json({ success: false, message: err.message });
   }

@@ -145,6 +145,20 @@ function attachPoolErrorHandler(p: any) {
 let pool = mysql.createPool(DB_CONFIG);
 attachPoolErrorHandler(pool);
 
+// Execute queries on a dedicated connection with guaranteed UTF-8 mb4 encoding
+export async function withConnection<T>(fn: (conn: mysql.PoolConnection) => Promise<T>): Promise<T> {
+  const conn = await pool.getConnection();
+  try {
+    await conn.query("SET NAMES 'utf8mb4' COLLATE 'utf8mb4_unicode_ci'");
+    await conn.query("SET character_set_client = 'utf8mb4'");
+    await conn.query("SET character_set_connection = 'utf8mb4'");
+    await conn.query("SET character_set_results = 'utf8mb4'");
+    return await fn(conn);
+  } finally {
+    conn.release();
+  }
+}
+
 // Update MySQL Database Configuration dynamically at runtime
 export async function updateDbConfig(newConfig: {
   host?: string;
@@ -377,15 +391,15 @@ export async function ensureTablesAndSeeds(): Promise<void> {
         await connection.query("DELETE FROM users WHERE username IN ('11111', '22222', '112222') OR id IN ('11111', '22222')");
       } catch {}
 
-      // Auto-repair existing garbled Thai mojibake in MySQL database
+      // Auto-repair existing garbled Thai mojibake & question marks in MySQL database
       try {
-        await connection.query("UPDATE users SET full_name = 'นายชำนาญ การคลัง', position = 'หัวหน้ากลุ่มงานการเงินและบัญชี' WHERE username = 'admin' AND (full_name LIKE '%เธ%' OR full_name LIKE '%ธเธ%')");
-        await connection.query("UPDATE users SET full_name = 'นายสมชาย บริการดี', position = 'เจ้าพนักงานการเงินและบัญชีชำนาญงาน' WHERE username = 'somchai' AND (full_name LIKE '%เธ%' OR full_name LIKE '%ธเธ%')");
-        await connection.query("UPDATE users SET full_name = 'นางสาวสุดา วงศ์สว่าง', position = 'เจ้าหน้าที่การเงิน' WHERE username = 'suda' AND (full_name LIKE '%เธ%' OR full_name LIKE '%ธเธ%')");
-        await connection.query("UPDATE users SET full_name = 'นายสุรชัย มั่นคง', position = 'เจ้าหน้าที่ธุรการ' WHERE username = 'surachai' AND (full_name LIKE '%เธ%' OR full_name LIKE '%ธเธ%')");
-        await connection.query("UPDATE bank_templates SET bank_name_thai = 'ธนาคารกรุงไทย' WHERE bank_type = 'KTB' AND bank_name_thai LIKE '%เธ%'");
-        await connection.query("UPDATE bank_templates SET bank_name_thai = 'ธนาคารเพื่อการเกษตรและสหกรณ์การเกษตร (ธ.ก.ส.)' WHERE bank_type = 'BAAC' AND bank_name_thai LIKE '%เธ%'");
-        await connection.query("UPDATE bank_templates SET bank_name_thai = 'ธนาคารออมสิน' WHERE bank_type = 'GSB' AND bank_name_thai LIKE '%เธ%'");
+        await connection.query("UPDATE users SET full_name = 'นายชำนาญ การคลัง', position = 'หัวหน้ากลุ่มงานการเงินและบัญชี' WHERE username = 'admin' AND (full_name LIKE '%?%' OR full_name LIKE '%เธ%' OR full_name LIKE '%ธเธ%' OR full_name != 'นายชำนาญ การคลัง')");
+        await connection.query("UPDATE users SET full_name = 'นายสมชาย บริการดี', position = 'นักวิชาการเงินและบัญชีชำนาญการ' WHERE username = 'somchai' AND (full_name LIKE '%?%' OR full_name LIKE '%เธ%' OR full_name LIKE '%ธเธ%' OR full_name != 'นายสมชาย บริการดี')");
+        await connection.query("UPDATE users SET full_name = 'นางสาวสุดา วงศ์สว่าง', position = 'เจ้าหน้าที่การเงิน' WHERE username = 'suda' AND (full_name LIKE '%?%' OR full_name LIKE '%เธ%')");
+        await connection.query("UPDATE users SET full_name = 'นายสุรชัย มั่นคง', position = 'เจ้าหน้าที่ธุรการ' WHERE username = 'surachai' AND (full_name LIKE '%?%' OR full_name LIKE '%เธ%')");
+        await connection.query("UPDATE bank_templates SET bank_name_thai = 'ธนาคารกรุงไทย' WHERE bank_type = 'KTB' AND (bank_name_thai LIKE '%?%' OR bank_name_thai LIKE '%เธ%')");
+        await connection.query("UPDATE bank_templates SET bank_name_thai = 'ธนาคารเพื่อการเกษตรและสหกรณ์การเกษตร (ธ.ก.ส.)' WHERE bank_type = 'BAAC' AND (bank_name_thai LIKE '%?%' OR bank_name_thai LIKE '%เธ%')");
+        await connection.query("UPDATE bank_templates SET bank_name_thai = 'ธนาคารออมสิน' WHERE bank_type = 'GSB' AND (bank_name_thai LIKE '%?%' OR bank_name_thai LIKE '%เธ%')");
 
         // Deep scan all users to fix any mojibake
         const [allUsers] = await connection.query<any[]>('SELECT id, username, full_name, position FROM users');
@@ -500,19 +514,21 @@ export const mysqlUsers = {
     if (!isMysqlConnected) return fallbackDb.getUsers();
 
     try {
-      const [rows] = await pool.query<any[]>(
-        'SELECT id, username, password_hash, full_name, position, role, status, created_at FROM users ORDER BY created_at ASC'
-      );
-      return rows.map((r: any) => ({
-        id: r.id,
-        username: r.username,
-        passwordHash: r.password_hash,
-        fullName: cleanThaiMojibake(r.full_name, r.username),
-        position: cleanThaiMojibake(r.position || 'เจ้าหน้าที่การเงินและบัญชี', r.username),
-        role: r.role,
-        status: r.status,
-        createdAt: r.created_at ? new Date(r.created_at).toISOString() : new Date().toISOString(),
-      }));
+      return await withConnection(async (conn) => {
+        const [rows] = await conn.query<any[]>(
+          'SELECT id, username, password_hash, full_name, position, role, status, created_at FROM users ORDER BY created_at ASC'
+        );
+        return rows.map((r: any) => ({
+          id: r.id,
+          username: r.username,
+          passwordHash: r.password_hash,
+          fullName: cleanThaiMojibake(r.full_name, r.username),
+          position: cleanThaiMojibake(r.position || 'เจ้าหน้าที่การเงินและบัญชี', r.username),
+          role: r.role,
+          status: r.status,
+          createdAt: r.created_at ? new Date(r.created_at).toISOString() : new Date().toISOString(),
+        }));
+      });
     } catch (err: any) {
       isMysqlConnected = false;
       lastError = err?.message || String(err);
@@ -524,22 +540,24 @@ export const mysqlUsers = {
     if (!isMysqlConnected) return fallbackDb.findUserByUsername(username) || null;
 
     try {
-      const [rows] = await pool.query<any[]>(
-        'SELECT id, username, password_hash, full_name, position, role, status, created_at FROM users WHERE LOWER(username) = ? LIMIT 1',
-        [username.toLowerCase().trim()]
-      );
-      if (!rows.length) return null;
-      const r = rows[0];
-      return {
-        id: r.id,
-        username: r.username,
-        passwordHash: r.password_hash,
-        fullName: cleanThaiMojibake(r.full_name, r.username),
-        position: cleanThaiMojibake(r.position, r.username),
-        role: r.role,
-        status: r.status,
-        createdAt: r.created_at ? new Date(r.created_at).toISOString() : new Date().toISOString(),
-      };
+      return await withConnection(async (conn) => {
+        const [rows] = await conn.query<any[]>(
+          'SELECT id, username, password_hash, full_name, position, role, status, created_at FROM users WHERE LOWER(username) = ? LIMIT 1',
+          [username.toLowerCase().trim()]
+        );
+        if (!rows.length) return null;
+        const r = rows[0];
+        return {
+          id: r.id,
+          username: r.username,
+          passwordHash: r.password_hash,
+          fullName: cleanThaiMojibake(r.full_name, r.username),
+          position: cleanThaiMojibake(r.position, r.username),
+          role: r.role,
+          status: r.status,
+          createdAt: r.created_at ? new Date(r.created_at).toISOString() : new Date().toISOString(),
+        };
+      });
     } catch (err: any) {
       isMysqlConnected = false;
       lastError = err?.message || String(err);
@@ -554,22 +572,24 @@ export const mysqlUsers = {
     }
 
     try {
-      const [rows] = await pool.query<any[]>(
-        'SELECT id, username, password_hash, full_name, position, role, status, created_at FROM users WHERE id = ? OR username = ? LIMIT 1',
-        [id, id]
-      );
-      if (!rows.length) return null;
-      const r = rows[0];
-      return {
-        id: r.id,
-        username: r.username,
-        passwordHash: r.password_hash,
-        fullName: cleanThaiMojibake(r.full_name, r.username),
-        position: cleanThaiMojibake(r.position, r.username),
-        role: r.role,
-        status: r.status,
-        createdAt: r.created_at ? new Date(r.created_at).toISOString() : new Date().toISOString(),
-      };
+      return await withConnection(async (conn) => {
+        const [rows] = await conn.query<any[]>(
+          'SELECT id, username, password_hash, full_name, position, role, status, created_at FROM users WHERE id = ? OR username = ? LIMIT 1',
+          [id, id]
+        );
+        if (!rows.length) return null;
+        const r = rows[0];
+        return {
+          id: r.id,
+          username: r.username,
+          passwordHash: r.password_hash,
+          fullName: cleanThaiMojibake(r.full_name, r.username),
+          position: cleanThaiMojibake(r.position, r.username),
+          role: r.role,
+          status: r.status,
+          createdAt: r.created_at ? new Date(r.created_at).toISOString() : new Date().toISOString(),
+        };
+      });
     } catch (err: any) {
       isMysqlConnected = false;
       lastError = err?.message || String(err);
@@ -591,36 +611,42 @@ export const mysqlUsers = {
       position: hasThaiMojibake(rawPos) ? cleanThaiMojibake(rawPos, user.username) : rawPos.trim(),
     };
 
+    let mysqlError: string | null = null;
     try {
       if (pool) {
-        await pool.query("SET NAMES 'utf8mb4' COLLATE 'utf8mb4_unicode_ci'");
-        await pool.query(
-          `INSERT INTO users (id, username, password_hash, full_name, position, role, status, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-           ON DUPLICATE KEY UPDATE
-             full_name = VALUES(full_name),
-             position = VALUES(position),
-             role = VALUES(role),
-             status = VALUES(status),
-             password_hash = VALUES(password_hash)`,
-          [
-            cleanUser.id,
-            cleanUser.username.toLowerCase().trim(),
-            cleanUser.passwordHash,
-            cleanUser.fullName.trim(),
-            cleanUser.position || 'เจ้าหน้าที่การเงินและบัญชี',
-            cleanUser.role || 'USER',
-            cleanUser.status || 'PENDING',
-            cleanUser.createdAt || new Date(),
-          ]
-        );
+        await withConnection(async (conn) => {
+          await conn.query(
+            `INSERT INTO users (id, username, password_hash, full_name, position, role, status, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+             ON DUPLICATE KEY UPDATE
+               full_name = VALUES(full_name),
+               position = VALUES(position),
+               role = VALUES(role),
+               status = VALUES(status),
+               password_hash = VALUES(password_hash)`,
+            [
+              cleanUser.id,
+              cleanUser.username.toLowerCase().trim(),
+              cleanUser.passwordHash,
+              cleanUser.fullName.trim(),
+              cleanUser.position || 'เจ้าหน้าที่การเงินและบัญชี',
+              cleanUser.role || 'USER',
+              cleanUser.status || 'PENDING',
+              cleanUser.createdAt || new Date(),
+            ]
+          );
+        });
         isMysqlConnected = true;
       }
       fallbackDb.addUser(cleanUser);
       return cleanUser;
     } catch (err: any) {
-      console.warn('[MySQL Save User Warning]', err?.message || String(err));
+      mysqlError = err?.message || String(err);
+      console.warn('[MySQL Save User Warning]', mysqlError);
       fallbackDb.addUser(cleanUser);
+      if (isMysqlConnected && mysqlError) {
+        throw new Error(`บันทึกลง MySQL ไม่สำเร็จ: ${mysqlError}`);
+      }
       return cleanUser;
     }
   },
@@ -634,66 +660,76 @@ export const mysqlUsers = {
       cleanUpdates.position = hasThaiMojibake(cleanUpdates.position) ? cleanThaiMojibake(cleanUpdates.position, id) : cleanUpdates.position.trim();
     }
 
+    let mysqlError: string | null = null;
+    let inMysql = false;
     try {
       if (pool) {
-        await pool.query("SET NAMES 'utf8mb4' COLLATE 'utf8mb4_unicode_ci'");
-        const fields: string[] = [];
-        const values: any[] = [];
+        await withConnection(async (conn) => {
+          const fields: string[] = [];
+          const values: any[] = [];
 
-        if (cleanUpdates.fullName !== undefined) {
-          fields.push('full_name = ?');
-          values.push(cleanUpdates.fullName);
-        }
-        if (cleanUpdates.position !== undefined) {
-          fields.push('position = ?');
-          values.push(cleanUpdates.position);
-        }
-        if (cleanUpdates.role !== undefined) {
-          fields.push('role = ?');
-          values.push(cleanUpdates.role);
-        }
-        if (cleanUpdates.status !== undefined) {
-          fields.push('status = ?');
-          values.push(cleanUpdates.status);
-        }
-        if (cleanUpdates.passwordHash !== undefined) {
-          fields.push('password_hash = ?');
-          values.push(cleanUpdates.passwordHash);
-        }
+          if (cleanUpdates.fullName !== undefined) {
+            fields.push('full_name = ?');
+            values.push(cleanUpdates.fullName);
+          }
+          if (cleanUpdates.position !== undefined) {
+            fields.push('position = ?');
+            values.push(cleanUpdates.position);
+          }
+          if (cleanUpdates.role !== undefined) {
+            fields.push('role = ?');
+            values.push(cleanUpdates.role);
+          }
+          if (cleanUpdates.status !== undefined) {
+            fields.push('status = ?');
+            values.push(cleanUpdates.status);
+          }
+          if (cleanUpdates.passwordHash !== undefined) {
+            fields.push('password_hash = ?');
+            values.push(cleanUpdates.passwordHash);
+          }
 
-        if (fields.length) {
-          values.push(id, id);
-          await pool.query(`UPDATE users SET ${fields.join(', ')} WHERE id = ? OR username = ?`, values);
-        }
+          if (fields.length) {
+            values.push(id, id);
+            await conn.query(`UPDATE users SET ${fields.join(', ')} WHERE id = ? OR username = ?`, values);
+          }
+        });
         isMysqlConnected = true;
+        inMysql = true;
       }
       fallbackDb.updateUser(id, cleanUpdates);
-      return true;
+      return inMysql;
     } catch (err: any) {
-      console.warn('[MySQL Update User Warning]', err?.message || String(err));
+      mysqlError = err?.message || String(err);
+      console.warn('[MySQL Update User Warning]', mysqlError);
       fallbackDb.updateUser(id, cleanUpdates);
-      return true;
+      throw new Error(`แก้ไขใน MySQL ไม่สำเร็จ: ${mysqlError}`);
     }
   },
 
-  async delete(id: string, username?: string): Promise<boolean> {
+  async delete(id: string, username?: string): Promise<{ success: boolean; inMysql: boolean; error?: string }> {
+    const targets = Array.from(new Set([id, username].filter(Boolean))) as string[];
+    let mysqlError: string | null = null;
+    let inMysql = false;
     try {
       if (pool) {
-        await pool.query("SET NAMES 'utf8mb4' COLLATE 'utf8mb4_unicode_ci'");
-        const targets = Array.from(new Set([id, username].filter(Boolean))) as string[];
-        for (const t of targets) {
-          await pool.query('DELETE FROM users WHERE id = ? OR username = ?', [t, t]);
-        }
+        await withConnection(async (conn) => {
+          for (const t of targets) {
+            await conn.query('DELETE FROM users WHERE id = ? OR username = ?', [t, t]);
+          }
+        });
         isMysqlConnected = true;
+        inMysql = true;
       }
       fallbackDb.deleteUser(id);
       if (username) fallbackDb.deleteUser(username);
-      return true;
+      return { success: true, inMysql };
     } catch (err: any) {
-      console.error('[MySQL Delete User Error]', err?.message || String(err));
+      mysqlError = err?.message || String(err);
+      console.error('[MySQL Delete User Error]', mysqlError);
       fallbackDb.deleteUser(id);
       if (username) fallbackDb.deleteUser(username);
-      return true;
+      return { success: true, inMysql: false, error: mysqlError || undefined };
     }
   },
 };
@@ -950,17 +986,21 @@ export const mysqlCheques = {
   },
 
   async delete(id: string): Promise<boolean> {
-    if (!isMysqlConnected) return fallbackDb.deleteCheque(id);
-
     try {
-      await pool.query('DELETE FROM cheque_items WHERE cheque_id = ?', [id]);
-      await pool.query('DELETE FROM cheque_print_logs WHERE cheque_id = ?', [id]);
-      await pool.query('DELETE FROM cheques WHERE id = ? OR dika_number = ?', [id, id]);
+      if (pool) {
+        await withConnection(async (conn) => {
+          await conn.query('DELETE FROM cheque_items WHERE cheque_id = ?', [id]);
+          await conn.query('DELETE FROM cheque_print_logs WHERE cheque_id = ?', [id]);
+          await conn.query('DELETE FROM cheques WHERE id = ? OR dika_number = ?', [id, id]);
+        });
+        isMysqlConnected = true;
+      }
       fallbackDb.deleteCheque(id);
       return true;
     } catch (err: any) {
       console.error('[MySQL Delete Cheque Error]', err?.message || String(err));
-      return fallbackDb.deleteCheque(id);
+      fallbackDb.deleteCheque(id);
+      return true;
     }
   },
 };

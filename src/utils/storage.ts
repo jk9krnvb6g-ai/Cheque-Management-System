@@ -540,6 +540,16 @@ export class StorageService {
   }
 
   // Users
+  static saveUsersFromBackend(users: User[]): void {
+    if (!Array.isArray(users) || users.length === 0) return;
+    const cleaned = users.map(u => ({
+      ...u,
+      fullName: fixThaiMojibake(u.fullName, u.username),
+      position: fixThaiMojibake(u.position || '', u.username),
+    }));
+    localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(cleaned));
+  }
+
   static getUsers(): User[] {
     const data = localStorage.getItem(STORAGE_KEYS.USERS);
     if (!data) {

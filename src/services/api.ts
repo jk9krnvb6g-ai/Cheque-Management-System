@@ -311,16 +311,21 @@ export const apiClient = {
     return res.data;
   },
 
-  async deleteUser(id: string, operator: User, username?: string): Promise<boolean> {
+  async deleteUser(id: string, operator: User, username?: string): Promise<{ success: boolean; inMysql: boolean; message?: string; error?: string }> {
     const query = username ? `?username=${encodeURIComponent(username)}` : '';
-    const res = await request<{ success: boolean }>(`/users/${encodeURIComponent(id)}${query}`, {
+    const res = await request<{ success: boolean; inMysql?: boolean; message?: string; error?: string }>(`/users/${encodeURIComponent(id)}${query}`, {
       method: 'DELETE',
       headers: {
         'x-operator': JSON.stringify(operator),
       },
       body: JSON.stringify({ id, username }),
     });
-    return res.success;
+    return {
+      success: !!res.success,
+      inMysql: !!res.inMysql,
+      message: res.message,
+      error: res.error,
+    };
   },
 
   async purgeDeletedUsers(activeUsernames: string[]): Promise<{ success: boolean; deletedCount: number; message: string }> {

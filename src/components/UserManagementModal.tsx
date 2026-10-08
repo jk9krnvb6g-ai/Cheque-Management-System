@@ -76,17 +76,25 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
   const [showEditPassword, setShowEditPassword] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
   const [isPurging, setIsPurging] = useState(false);
+  const [dbLiveConnected, setDbLiveConnected] = useState<boolean | null>(null);
+  const [isRefreshingLive, setIsRefreshingLive] = useState(false);
 
-  const loadUsers = useCallback(async () => {
+  const loadUsers = useCallback(async (showSpin = false) => {
+    if (showSpin) setIsRefreshingLive(true);
     setUsers(StorageService.getUsers());
     try {
+      const statusRes = await apiClient.getDbStatus().catch(() => null);
+      setDbLiveConnected(statusRes?.connected ?? false);
+
       const remoteUsers = await apiClient.getUsers();
       if (remoteUsers && Array.isArray(remoteUsers) && remoteUsers.length > 0) {
-        await StorageService.syncWithBackend().catch(() => {});
-        setUsers(StorageService.getUsers());
+        await StorageService.saveUsersFromBackend(remoteUsers);
+        setUsers(remoteUsers);
       }
     } catch {
-      // Backend offline or unreachable, keep local data
+      setDbLiveConnected(false);
+    } finally {
+      if (showSpin) setIsRefreshingLive(false);
     }
   }, []);
 
@@ -226,23 +234,27 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
     setSuccessMsg(null);
     try {
       // 1. ซ่อมแซมและปรับโครงสร้างตาราง MySQL เป็น UTF-8 100%
-      await apiClient.repairThaiCharset().catch(() => {});
+      const repairRes = await apiClient.repairThaiCharset().catch((err: any) => ({ success: false, message: err?.message }));
       
       // 2. ล้างผู้ใช้ที่ถูกลบออกจากฐานข้อมูล MySQL
       const currentActiveUsernames = StorageService.getUsers().map(u => u.username);
-      const purgeRes = await apiClient.purgeDeletedUsers(currentActiveUsernames).catch(() => null);
+      const purgeRes = await apiClient.purgeDeletedUsers(currentActiveUsernames).catch((err: any) => ({ success: false, message: err?.message, deletedCount: 0 }));
 
       // 3. ซิงค์ข้อมูลกับ MySQL อีกครั้ง
       await StorageService.syncWithBackend().catch(() => {});
-      loadUsers();
+      await loadUsers();
       if (onRefreshData) onRefreshData();
 
-      setSuccessMsg(
-        purgeRes?.message ||
-        'ซิงค์และล้างสมาชิกที่ถูกลบออกจากฐานข้อมูล MySQL (รวมถึงบัญชีทดสอบ 11111, 22222) พร้อมปรับแต่ง UTF-8 สำเร็จเรียบร้อยแล้ว'
-      );
-    } catch {
-      setErrorMsg('เกิดข้อผิดพลาดในการเชื่อมต่อเพื่อล้างข้อมูลใน MySQL');
+      if (repairRes && !repairRes.success && repairRes.message) {
+        setErrorMsg(`⚠️ ผลการซ่อมแซม: ${repairRes.message}`);
+      } else {
+        setSuccessMsg(
+          purgeRes?.message ||
+          '✅ ซิงค์ข้อมูลและล้างบัญชีทดสอบที่ตกค้างใน MySQL (11111, 22222) พร้อมจัดระเบียบภาษาไทย UTF-8 สมบูรณ์แบบแล้ว'
+        );
+      }
+    } catch (err: any) {
+      setErrorMsg(`เกิดข้อผิดพลาดในการเชื่อมต่อเพื่อล้างข้อมูลใน MySQL: ${err?.message || ''}`);
     } finally {
       setIsPurging(false);
     }
@@ -262,29 +274,46 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
     }
 
     setIsSubmitting(true);
+    setErrorMsg(null);
+    setSuccessMsg(null);
     try {
+      let inMysql = false;
+      let mysqlDeleteError: string | null = null;
+
+      // 1. ส่งคำสั่งลบไปยัง MySQL โดยตรงทันที
+      try {
+        const res = await apiClient.deleteUser(targetUser.id, currentUser, targetUser.username);
+        inMysql = res.inMysql;
+        if (!res.inMysql && res.error) {
+          mysqlDeleteError = res.error;
+        }
+      } catch (err: any) {
+        mysqlDeleteError = err?.message || String(err);
+      }
+
+      // 2. ลบออกจาก Local Storage
       await StorageService.deleteUser(targetUser.id, currentUser, targetUser.username);
 
-      // สั่งลบไปยัง MySQL ทั้งจาก ID และ Username โดยตรง
-      try {
-        await apiClient.deleteUser(targetUser.id, currentUser, targetUser.username);
-      } catch {}
-      try {
-        await apiClient.deleteUser(targetUser.username, currentUser, targetUser.username);
-      } catch {}
-
-      // ป้องกันข้อมูลค้างใน MySQL โดยสั่งล้างชื่อผู้ใช้ที่ไม่อยู่ในระบบแล้ว
+      // 3. ป้องกันข้อมูลค้างใน MySQL โดยสั่งล้างชื่อผู้ใช้ที่ไม่อยู่ในระบบแล้ว
       const currentActive = StorageService.getUsers().map(u => u.username);
       try {
         await apiClient.purgeDeletedUsers(currentActive);
       } catch {}
 
-      await loadUsers();
+      // อัปเดตรายการในหน้าจอทันที ไม่ต้องรอ Sync ใดๆ
+      setUsers(prev => prev.filter(u => u.id !== targetUser.id && u.username !== targetUser.username));
       setDeleteTarget(null);
-      setSuccessMsg(`ลบบัญชีผู้ใช้ ${targetUser.fullName} (@${targetUser.username}) ออกจากระบบและลบออกจาก MySQL สำเร็จเรียบร้อยแล้ว`);
+
+      if (inMysql) {
+        setSuccessMsg(`✅ กดปุ่มลบ -> ลบบัญชีผู้ใช้ ${targetUser.fullName} (@${targetUser.username}) ออกจากฐานข้อมูล MySQL ทันทีเรียบร้อยแล้ว`);
+      } else if (mysqlDeleteError) {
+        setErrorMsg(`⚠️ ลบออกจากหน้าจอแล้ว แต่ไม่สามารถลบใน MySQL (10.1.0.201) ได้: ${mysqlDeleteError} (ตรวจสอบ start-backend.bat หรือสถานะ MySQL)`);
+      } else {
+        setSuccessMsg(`ลบบัญชีผู้ใช้ ${targetUser.fullName} ออกจากหน้าจอแล้ว (MySQL ออฟไลน์)`);
+      }
       if (onRefreshData) onRefreshData();
-    } catch {
-      setErrorMsg('เกิดข้อผิดพลาดในการลบบัญชีผู้ใช้');
+    } catch (err: any) {
+      setErrorMsg(`เกิดข้อผิดพลาดในการลบบัญชีผู้ใช้: ${err?.message || ''}`);
     } finally {
       setIsSubmitting(false);
     }
@@ -316,7 +345,26 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
     }
 
     setIsUpdating(true);
+    setErrorMsg(null);
+    setSuccessMsg(null);
     try {
+      let mysqlUpdateError: string | null = null;
+
+      // 1. ส่งคำสั่งอัปเดตไปยัง MySQL Backend
+      try {
+        await apiClient.updateUser(editingUser.id, {
+          fullName: editFullName.trim(),
+          position: editPosition.trim(),
+          role: editRole,
+          status: editStatus,
+          password: editNewPassword.trim() || undefined,
+          operator: currentUser,
+        });
+      } catch (err: any) {
+        mysqlUpdateError = err?.message || String(err);
+      }
+
+      // 2. บันทึกลง Local Storage
       const res = await StorageService.updateUserProfile(
         editingUser.id,
         {
@@ -331,14 +379,18 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
 
       if (!res.success) {
         setErrorMsg(res.error || 'การแก้ไขข้อมูลล้มเหลว');
-      } else {
-        setSuccessMsg(`บันทึกการแก้ไขข้อมูลผู้ใช้งาน "${editFullName}" เรียบร้อยแล้ว`);
+      } else if (mysqlUpdateError) {
+        setErrorMsg(`⚠️ บันทึกในหน้าจอแล้ว แต่ไม่สามารถอัปเดตลง MySQL 10.1.0.201 ได้: ${mysqlUpdateError}`);
         setEditingUser(null);
-        loadUsers();
+        await loadUsers();
+      } else {
+        setSuccessMsg(`✅ บันทึกการแก้ไขข้อมูลผู้ใช้งาน "${editFullName}" ลงใน MySQL เรียบร้อยแล้ว`);
+        setEditingUser(null);
+        await loadUsers();
         if (onRefreshData) onRefreshData();
       }
-    } catch {
-      setErrorMsg('เกิดข้อผิดพลาดในการบันทึกข้อมูลผู้ใช้งาน');
+    } catch (err: any) {
+      setErrorMsg(`เกิดข้อผิดพลาดในการบันทึกข้อมูลผู้ใช้งาน: ${err?.message || ''}`);
     } finally {
       setIsUpdating(false);
     }
@@ -364,13 +416,41 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
             </div>
           </div>
 
-          <button
-            onClick={onClose}
-            className="w-9 h-9 rounded-xl bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-colors cursor-pointer"
-            title="ปิดหน้าต่าง"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => loadUsers(true)}
+              disabled={isRefreshingLive}
+              title="ดึงข้อมูลสดจากฐานข้อมูล MySQL ทันที"
+              className="px-2.5 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer border border-white/20"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isRefreshingLive ? 'animate-spin' : ''}`} />
+              <span className="hidden sm:inline">รีเฟรชสด</span>
+            </button>
+
+            <div className={`px-2.5 py-1.5 rounded-xl border text-xs font-bold flex items-center gap-1.5 ${
+              dbLiveConnected === true
+                ? 'bg-emerald-950/80 border-emerald-400 text-emerald-200'
+                : dbLiveConnected === false
+                ? 'bg-rose-950/80 border-rose-400 text-rose-200'
+                : 'bg-amber-950/80 border-amber-400 text-amber-200'
+            }`}>
+              <span className={`w-2 h-2 rounded-full ${
+                dbLiveConnected === true ? 'bg-emerald-400 animate-pulse' : dbLiveConnected === false ? 'bg-rose-400' : 'bg-amber-400'
+              }`} />
+              <span className="text-[11px] font-mono">
+                {dbLiveConnected === true ? 'MySQL 10.1.0.201 (โหมดตรง)' : dbLiveConnected === false ? 'MySQL ออฟไลน์' : 'กำลังตรวจ...'}
+              </span>
+            </div>
+
+            <button
+              onClick={onClose}
+              className="w-9 h-9 rounded-xl bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-colors cursor-pointer"
+              title="ปิดหน้าต่าง"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {/* Content Body */}

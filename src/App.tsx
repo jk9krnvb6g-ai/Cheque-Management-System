@@ -113,27 +113,27 @@ export default function App() {
       }
     });
 
-    // 2. Health check function
-    const checkDbHealth = async () => {
+    // 2. Health check & background real-time sync function
+    const checkDbHealthAndSync = async () => {
       try {
         const status = await apiClient.getDbStatus();
-        setDbConnected(status?.connected ?? false);
+        const isConn = status?.connected ?? false;
+        setDbConnected(isConn);
       } catch {
         setDbConnected(false);
       }
     };
 
-    checkDbHealth();
-    const interval = setInterval(checkDbHealth, 30000); // Check every 30s
+    checkDbHealthAndSync();
 
-    // 3. Listen to external or cross-tab sync events
+    // 3. Listen to external or explicit db update events
     const handleDbSynced = () => {
       refreshData();
     };
+
     window.addEventListener('cheque_db_synced', handleDbSynced);
 
     return () => {
-      clearInterval(interval);
       window.removeEventListener('cheque_db_synced', handleDbSynced);
     };
   }, []);
