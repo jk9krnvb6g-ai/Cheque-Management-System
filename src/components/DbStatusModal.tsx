@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Database, RefreshCw, CheckCircle2, AlertCircle, X, Server, Key, Save, ChevronDown, ChevronUp, UploadCloud, Sparkles, Wrench } from 'lucide-react';
+import { Database, RefreshCw, CheckCircle2, AlertCircle, X, Server, Key, Save, ChevronDown, ChevronUp, UploadCloud, Sparkles, Wrench, Copy, Check, FileText } from 'lucide-react';
 import { apiClient } from '../services/api';
 import { StorageService } from '../utils/storage';
 
@@ -18,6 +18,33 @@ export const DbStatusModal: React.FC<DbStatusModalProps> = ({ isOpen, onClose, o
   const [syncAllMsg, setSyncAllMsg] = useState<string | null>(null);
   const [repairing, setRepairing] = useState(false);
   const [repairMsg, setRepairMsg] = useState<string | null>(null);
+  const [showSqlSnippet, setShowSqlSnippet] = useState(false);
+  const [copiedSql, setCopiedSql] = useState(false);
+
+  const SQL_REPAIR_SCRIPT = `-- ปรับฐานข้อมูลและตารางให้เป็น utf8mb4_unicode_ci รองรับภาษาไทย 100%
+USE cheque_system;
+SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+ALTER DATABASE \`cheque_system\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+ALTER TABLE \`users\` CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+ALTER TABLE \`cheques\` CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+ALTER TABLE \`cheque_items\` CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+ALTER TABLE \`bank_templates\` CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+ALTER TABLE \`cheque_print_logs\` CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+ALTER TABLE \`audit_logs\` CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- ล้างข้อมูลสมาชิกทดสอบที่ถูกลบออกจากระบบ (11111, 22222)
+DELETE FROM \`users\` WHERE \`username\` IN ('11111', '22222', '112222') OR \`id\` IN ('11111', '22222');
+
+-- ซ่อมแซมชื่อภาษาไทยให้ถูกต้อง 100%
+UPDATE \`users\` SET \`full_name\` = 'นายชำนาญ การคลัง', \`position\` = 'หัวหน้ากลุ่มงานการเงินและบัญชี' WHERE \`username\` = 'admin';
+UPDATE \`users\` SET \`full_name\` = 'นายสมชาย บริการดี', \`position\` = 'นักวิชาการเงินและบัญชีชำนาญการ' WHERE \`username\` = 'somchai';`;
+
+  const handleCopySql = () => {
+    navigator.clipboard.writeText(SQL_REPAIR_SCRIPT);
+    setCopiedSql(true);
+    setTimeout(() => setCopiedSql(false), 3000);
+  };
   const [formData, setFormData] = useState({
     host: '10.1.0.201',
     port: 3306,
@@ -225,31 +252,70 @@ export const DbStatusModal: React.FC<DbStatusModalProps> = ({ isOpen, onClose, o
             </div>
           )}
 
-          {/* Thai Mojibake & Database Charset Repair Card */}
-          <div className="bg-amber-50/90 border-2 border-amber-300 rounded-2xl p-4 space-y-2.5">
-            <div className="flex items-center justify-between">
+          {/* Thai Charset & Database utf8mb4_unicode_ci Repair Card */}
+          <div className="bg-gradient-to-br from-amber-50 to-orange-50 border-2 border-amber-300 rounded-2xl p-4 space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2 text-xs font-black text-amber-950">
                 <Sparkles className="w-4 h-4 text-amber-600" />
-                <span>กู้คืนภาษาไทยต่างดาวใน MySQL (Mojibake Auto-Repair)</span>
+                <span>ชุดอักขระภาษาไทย MySQL: UTF-8 (utf8mb4_unicode_ci)</span>
               </div>
-              <button
-                type="button"
-                onClick={handleRepairDb}
-                disabled={repairing}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-xl transition-colors cursor-pointer disabled:opacity-50 shadow-xs"
-              >
-                {repairing ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Wrench className="w-3.5 h-3.5" />}
-                <span>{repairing ? 'กำลังกู้คืน...' : '🔧 ซ่อมภาษาไทยทันที'}</span>
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleRepairDb}
+                  disabled={repairing}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-xl transition-colors cursor-pointer disabled:opacity-50 shadow-xs"
+                >
+                  {repairing ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Wrench className="w-3.5 h-3.5" />}
+                  <span>{repairing ? 'กำลังปรับปรุง...' : '⚡ ปรับเป็น utf8mb4 & ซ่อมภาษาไทย'}</span>
+                </button>
+              </div>
             </div>
-            <p className="text-[11px] text-amber-800 leading-relaxed">
-              หากในฐานข้อมูล MySQL แสดงชื่อเป็นอักษรต่างดาว (เช่น <code>เธ™เธฒเธข...</code> หรือ <code>ธเธฒเธข...</code>) ให้กดปุ่มนี้ ระบบจะกู้คืนภาษาไทยให้กลับมาถูกต้อง 100% พร้อมปรับ Collation ฐานข้อมูลเป็น <code>utf8mb4_unicode_ci</code>
+
+            <p className="text-[11px] text-amber-900 leading-relaxed">
+              ระบบรองรับภาษาไทย 100% ด้วย <code>utf8mb4_unicode_ci</code> หากใน phpMyAdmin แสดงเป็นภาษาต่างดาว (เช่น <code>เธ™เธฒเธข...</code> หรือ <code>????</code>) สามารถกดปุ่มปรับปรุง หรือคัดลอกคำสั่ง SQL ไปรันใน phpMyAdmin ได้ทันที
             </p>
+
             {repairMsg && (
-              <div className="p-2.5 bg-white border border-amber-300 rounded-xl text-xs font-semibold text-slate-800">
+              <div className="p-2.5 bg-white border border-amber-300 rounded-xl text-xs font-semibold text-slate-800 animate-in fade-in">
                 {repairMsg}
               </div>
             )}
+
+            {/* SQL Query Snippet for phpMyAdmin */}
+            <div className="pt-1">
+              <div className="flex items-center justify-between mb-1.5">
+                <button
+                  type="button"
+                  onClick={() => setShowSqlSnippet(!showSqlSnippet)}
+                  className="text-[11px] font-bold text-amber-900 hover:text-amber-950 flex items-center gap-1 cursor-pointer"
+                >
+                  <FileText className="w-3.5 h-3.5 text-amber-700" />
+                  <span>{showSqlSnippet ? 'ซ่อนคำสั่ง SQL สำหรับ phpMyAdmin' : '📋 ดูคำสั่ง SQL ภาษาไทย (utf8mb4) สำหรับรันใน phpMyAdmin'}</span>
+                  {showSqlSnippet ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleCopySql}
+                  className="flex items-center gap-1 px-2.5 py-1 bg-white hover:bg-amber-100 border border-amber-300 rounded-lg text-[11px] font-extrabold text-amber-950 transition-colors cursor-pointer shadow-xs"
+                >
+                  {copiedSql ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5 text-amber-700" />}
+                  <span>{copiedSql ? 'คัดลอกแล้ว!' : 'คัดลอกคำสั่ง SQL'}</span>
+                </button>
+              </div>
+
+              {showSqlSnippet && (
+                <div className="relative mt-2 animate-in fade-in">
+                  <pre className="p-3 bg-slate-900 text-amber-200 rounded-xl text-[10px] font-mono overflow-x-auto max-h-40 leading-relaxed border border-slate-700">
+                    {SQL_REPAIR_SCRIPT}
+                  </pre>
+                  <div className="text-[10px] text-amber-800 mt-1">
+                    💡 <strong>วิธีใช้ใน phpMyAdmin:</strong> คลิกที่ฐานข้อมูล <code>cheque_system</code> ➔ ไปที่แท็บ <strong>SQL</strong> ➔ วางคำสั่งแล้วกด <strong>Go (ลงมือทำ)</strong>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Alert about .env restart */}

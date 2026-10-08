@@ -765,55 +765,57 @@ export const mysqlCheques = {
       }
       query += ' ORDER BY created_at DESC';
 
-      const [rows] = await pool.query<any[]>(query, params);
+      return await withConnection(async (conn) => {
+        const [rows] = await conn.query<any[]>(query, params);
 
-      // Fetch items for all cheques
-      const [itemsRows] = await pool.query<any[]>(
-        'SELECT * FROM cheque_items'
-      );
+        // Fetch items for all cheques
+        const [itemsRows] = await conn.query<any[]>(
+          'SELECT * FROM cheque_items'
+        );
 
-      const itemsMap = new Map<string, ChequeItem[]>();
-      itemsRows.forEach((it: any) => {
-        const arr = itemsMap.get(it.cheque_id) || [];
-        arr.push({
-          id: it.id,
-          description: cleanThaiMojibake(it.description),
-          amount: Number(it.amount),
+        const itemsMap = new Map<string, ChequeItem[]>();
+        itemsRows.forEach((it: any) => {
+          const arr = itemsMap.get(it.cheque_id) || [];
+          arr.push({
+            id: it.id,
+            description: cleanThaiMojibake(it.description),
+            amount: Number(it.amount),
+          });
+          itemsMap.set(it.cheque_id, arr);
         });
-        itemsMap.set(it.cheque_id, arr);
-      });
 
-      return rows.map((r: any) => ({
-        id: r.id,
-        chequeNumber: r.cheque_number || '',
-        stubDate: r.stub_date ? new Date(r.stub_date).toISOString().slice(0, 10) : '',
-        chequeDate: r.cheque_date ? new Date(r.cheque_date).toISOString().slice(0, 10) : '',
-        fiscalYear: Number(r.fiscal_year),
-        stubPayeeName: cleanThaiMojibake(r.stub_payee_name || r.cheque_payee_name),
-        chequePayeeName: cleanThaiMojibake(r.cheque_payee_name),
-        dikaNumber: r.dika_number || '',
-        bankAccountNo: r.bank_account_no || '',
-        items: itemsMap.get(r.id) || [],
-        totalAmount: Number(r.total_amount),
-        totalAmountThaiText: cleanThaiMojibake(r.total_amount_thai_text),
-        withholdingTaxPercent: Number(r.withholding_tax_percent || 0),
-        withholdingTaxAmount: Number(r.withholding_tax_amount || 0),
-        netPaidAmount: Number(r.net_paid_amount),
-        memo: r.memo ? cleanThaiMojibake(r.memo) : '',
-        status: r.status,
-        voidReason: r.void_reason ? cleanThaiMojibake(r.void_reason) : undefined,
-        voidAt: r.void_at ? new Date(r.void_at).toISOString() : undefined,
-        voidBy: r.void_by ? cleanThaiMojibake(r.void_by) : undefined,
-        createdBy: cleanThaiMojibake(r.created_by, r.created_by_username),
-        createdByUsername: r.created_by_username,
-        createdAt: r.created_at ? new Date(r.created_at).toISOString() : new Date().toISOString(),
-        updatedBy: r.updated_by ? cleanThaiMojibake(r.updated_by) : undefined,
-        updatedAt: r.updated_at ? new Date(r.updated_at).toISOString() : undefined,
-        printCount: Number(r.print_count || 0),
-        lastPrintedAt: r.last_printed_at ? new Date(r.last_printed_at).toISOString() : undefined,
-        lastPrintedBy: r.last_printed_by ? cleanThaiMojibake(r.last_printed_by) : undefined,
-        lastBankType: r.last_bank_type || 'KTB',
-      }));
+        return rows.map((r: any) => ({
+          id: r.id,
+          chequeNumber: r.cheque_number || '',
+          stubDate: r.stub_date ? new Date(r.stub_date).toISOString().slice(0, 10) : '',
+          chequeDate: r.cheque_date ? new Date(r.cheque_date).toISOString().slice(0, 10) : '',
+          fiscalYear: Number(r.fiscal_year),
+          stubPayeeName: cleanThaiMojibake(r.stub_payee_name || r.cheque_payee_name),
+          chequePayeeName: cleanThaiMojibake(r.cheque_payee_name),
+          dikaNumber: r.dika_number || '',
+          bankAccountNo: r.bank_account_no || '',
+          items: itemsMap.get(r.id) || [],
+          totalAmount: Number(r.total_amount),
+          totalAmountThaiText: cleanThaiMojibake(r.total_amount_thai_text),
+          withholdingTaxPercent: Number(r.withholding_tax_percent || 0),
+          withholdingTaxAmount: Number(r.withholding_tax_amount || 0),
+          netPaidAmount: Number(r.net_paid_amount),
+          memo: r.memo ? cleanThaiMojibake(r.memo) : '',
+          status: r.status,
+          voidReason: r.void_reason ? cleanThaiMojibake(r.void_reason) : undefined,
+          voidAt: r.void_at ? new Date(r.void_at).toISOString() : undefined,
+          voidBy: r.void_by ? cleanThaiMojibake(r.void_by) : undefined,
+          createdBy: cleanThaiMojibake(r.created_by, r.created_by_username),
+          createdByUsername: r.created_by_username,
+          createdAt: r.created_at ? new Date(r.created_at).toISOString() : new Date().toISOString(),
+          updatedBy: r.updated_by ? cleanThaiMojibake(r.updated_by) : undefined,
+          updatedAt: r.updated_at ? new Date(r.updated_at).toISOString() : undefined,
+          printCount: Number(r.print_count || 0),
+          lastPrintedAt: r.last_printed_at ? new Date(r.last_printed_at).toISOString() : undefined,
+          lastPrintedBy: r.last_printed_by ? cleanThaiMojibake(r.last_printed_by) : undefined,
+          lastBankType: r.last_bank_type || 'KTB',
+        }));
+      });
     } catch (err: any) {
       isMysqlConnected = false;
       lastError = err?.message || String(err);
@@ -825,48 +827,50 @@ export const mysqlCheques = {
     if (!isMysqlConnected) return fallbackDb.getChequeById(id) || null;
 
     try {
-      const [rows] = await pool.query<any[]>('SELECT * FROM cheques WHERE id = ? OR dika_number = ? LIMIT 1', [id, id]);
-      if (!rows.length) return null;
-      const r = rows[0];
+      return await withConnection(async (conn) => {
+        const [rows] = await conn.query<any[]>('SELECT * FROM cheques WHERE id = ? OR dika_number = ? LIMIT 1', [id, id]);
+        if (!rows.length) return null;
+        const r = rows[0];
 
-      const [itemsRows] = await pool.query<any[]>('SELECT * FROM cheque_items WHERE cheque_id = ?', [r.id]);
-      const items: ChequeItem[] = itemsRows.map((it: any) => ({
-        id: it.id,
-        description: cleanThaiMojibake(it.description),
-        amount: Number(it.amount),
-      }));
+        const [itemsRows] = await conn.query<any[]>('SELECT * FROM cheque_items WHERE cheque_id = ?', [r.id]);
+        const items: ChequeItem[] = itemsRows.map((it: any) => ({
+          id: it.id,
+          description: cleanThaiMojibake(it.description),
+          amount: Number(it.amount),
+        }));
 
-      return {
-        id: r.id,
-        chequeNumber: r.cheque_number || '',
-        stubDate: r.stub_date ? new Date(r.stub_date).toISOString().slice(0, 10) : '',
-        chequeDate: r.cheque_date ? new Date(r.cheque_date).toISOString().slice(0, 10) : '',
-        fiscalYear: Number(r.fiscal_year),
-        stubPayeeName: cleanThaiMojibake(r.stub_payee_name || r.cheque_payee_name),
-        chequePayeeName: cleanThaiMojibake(r.cheque_payee_name),
-        dikaNumber: r.dika_number || '',
-        bankAccountNo: r.bank_account_no || '',
-        items,
-        totalAmount: Number(r.total_amount),
-        totalAmountThaiText: cleanThaiMojibake(r.total_amount_thai_text),
-        withholdingTaxPercent: Number(r.withholding_tax_percent || 0),
-        withholdingTaxAmount: Number(r.withholding_tax_amount || 0),
-        netPaidAmount: Number(r.net_paid_amount),
-        memo: r.memo ? cleanThaiMojibake(r.memo) : '',
-        status: r.status,
-        voidReason: r.void_reason ? cleanThaiMojibake(r.void_reason) : undefined,
-        voidAt: r.void_at ? new Date(r.void_at).toISOString() : undefined,
-        voidBy: r.void_by ? cleanThaiMojibake(r.void_by) : undefined,
-        createdBy: cleanThaiMojibake(r.created_by, r.created_by_username),
-        createdByUsername: r.created_by_username,
-        createdAt: r.created_at ? new Date(r.created_at).toISOString() : new Date().toISOString(),
-        updatedBy: r.updated_by ? cleanThaiMojibake(r.updated_by) : undefined,
-        updatedAt: r.updated_at ? new Date(r.updated_at).toISOString() : undefined,
-        printCount: Number(r.print_count || 0),
-        lastPrintedAt: r.last_printed_at ? new Date(r.last_printed_at).toISOString() : undefined,
-        lastPrintedBy: r.last_printed_by ? cleanThaiMojibake(r.last_printed_by) : undefined,
-        lastBankType: r.last_bank_type || 'KTB',
-      };
+        return {
+          id: r.id,
+          chequeNumber: r.cheque_number || '',
+          stubDate: r.stub_date ? new Date(r.stub_date).toISOString().slice(0, 10) : '',
+          chequeDate: r.cheque_date ? new Date(r.cheque_date).toISOString().slice(0, 10) : '',
+          fiscalYear: Number(r.fiscal_year),
+          stubPayeeName: cleanThaiMojibake(r.stub_payee_name || r.cheque_payee_name),
+          chequePayeeName: cleanThaiMojibake(r.cheque_payee_name),
+          dikaNumber: r.dika_number || '',
+          bankAccountNo: r.bank_account_no || '',
+          items,
+          totalAmount: Number(r.total_amount),
+          totalAmountThaiText: cleanThaiMojibake(r.total_amount_thai_text),
+          withholdingTaxPercent: Number(r.withholding_tax_percent || 0),
+          withholdingTaxAmount: Number(r.withholding_tax_amount || 0),
+          netPaidAmount: Number(r.net_paid_amount),
+          memo: r.memo ? cleanThaiMojibake(r.memo) : '',
+          status: r.status,
+          voidReason: r.void_reason ? cleanThaiMojibake(r.void_reason) : undefined,
+          voidAt: r.void_at ? new Date(r.void_at).toISOString() : undefined,
+          voidBy: r.void_by ? cleanThaiMojibake(r.void_by) : undefined,
+          createdBy: cleanThaiMojibake(r.created_by, r.created_by_username),
+          createdByUsername: r.created_by_username,
+          createdAt: r.created_at ? new Date(r.created_at).toISOString() : new Date().toISOString(),
+          updatedBy: r.updated_by ? cleanThaiMojibake(r.updated_by) : undefined,
+          updatedAt: r.updated_at ? new Date(r.updated_at).toISOString() : undefined,
+          printCount: Number(r.print_count || 0),
+          lastPrintedAt: r.last_printed_at ? new Date(r.last_printed_at).toISOString() : undefined,
+          lastPrintedBy: r.last_printed_by ? cleanThaiMojibake(r.last_printed_by) : undefined,
+          lastBankType: r.last_bank_type || 'KTB',
+        };
+      });
     } catch (err: any) {
       isMysqlConnected = false;
       lastError = err?.message || String(err);
@@ -890,72 +894,74 @@ export const mysqlCheques = {
 
     try {
       const now = new Date();
-      await pool.query(
-        `INSERT INTO cheques (
-          id, cheque_number, stub_date, cheque_date, fiscal_year,
-          stub_payee_name, cheque_payee_name, dika_number, bank_account_no,
-          total_amount, total_amount_thai_text, withholding_tax_percent, withholding_tax_amount,
-          net_paid_amount, memo, status, created_by, created_by_username, created_at,
-          print_count, last_printed_at, last_printed_by, last_bank_type
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON DUPLICATE KEY UPDATE
-          cheque_number = VALUES(cheque_number),
-          stub_date = VALUES(stub_date),
-          cheque_date = VALUES(cheque_date),
-          fiscal_year = VALUES(fiscal_year),
-          stub_payee_name = VALUES(stub_payee_name),
-          cheque_payee_name = VALUES(cheque_payee_name),
-          dika_number = VALUES(dika_number),
-          bank_account_no = VALUES(bank_account_no),
-          total_amount = VALUES(total_amount),
-          total_amount_thai_text = VALUES(total_amount_thai_text),
-          withholding_tax_percent = VALUES(withholding_tax_percent),
-          withholding_tax_amount = VALUES(withholding_tax_amount),
-          net_paid_amount = VALUES(net_paid_amount),
-          memo = VALUES(memo),
-          status = VALUES(status),
-          print_count = VALUES(print_count),
-          last_printed_at = VALUES(last_printed_at),
-          last_printed_by = VALUES(last_printed_by),
-          last_bank_type = VALUES(last_bank_type),
-          updated_at = NOW()`,
-        [
-          cleanCheque.id,
-          cleanCheque.chequeNumber || null,
-          cleanCheque.stubDate || new Date().toISOString().slice(0, 10),
-          cleanCheque.chequeDate || cleanCheque.stubDate || new Date().toISOString().slice(0, 10),
-          cleanCheque.fiscalYear,
-          cleanCheque.stubPayeeName || cleanCheque.chequePayeeName,
-          cleanCheque.chequePayeeName,
-          cleanCheque.dikaNumber || null,
-          cleanCheque.bankAccountNo || null,
-          cleanCheque.totalAmount || 0,
-          cleanCheque.totalAmountThaiText || '',
-          cleanCheque.withholdingTaxPercent || 0,
-          cleanCheque.withholdingTaxAmount || 0,
-          cleanCheque.netPaidAmount || cleanCheque.totalAmount || 0,
-          cleanCheque.memo || null,
-          cleanCheque.status || 'PENDING',
-          cleanCheque.createdBy,
-          cleanCheque.createdByUsername || 'admin',
-          cleanCheque.createdAt ? new Date(cleanCheque.createdAt) : now,
-          cleanCheque.printCount || 0,
-          cleanCheque.lastPrintedAt ? new Date(cleanCheque.lastPrintedAt) : null,
-          cleanCheque.lastPrintedBy || null,
-          cleanCheque.lastBankType || 'KTB',
-        ]
-      );
+      await withConnection(async (conn) => {
+        await conn.query(
+          `INSERT INTO cheques (
+            id, cheque_number, stub_date, cheque_date, fiscal_year,
+            stub_payee_name, cheque_payee_name, dika_number, bank_account_no,
+            total_amount, total_amount_thai_text, withholding_tax_percent, withholding_tax_amount,
+            net_paid_amount, memo, status, created_by, created_by_username, created_at,
+            print_count, last_printed_at, last_printed_by, last_bank_type
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON DUPLICATE KEY UPDATE
+            cheque_number = VALUES(cheque_number),
+            stub_date = VALUES(stub_date),
+            cheque_date = VALUES(cheque_date),
+            fiscal_year = VALUES(fiscal_year),
+            stub_payee_name = VALUES(stub_payee_name),
+            cheque_payee_name = VALUES(cheque_payee_name),
+            dika_number = VALUES(dika_number),
+            bank_account_no = VALUES(bank_account_no),
+            total_amount = VALUES(total_amount),
+            total_amount_thai_text = VALUES(total_amount_thai_text),
+            withholding_tax_percent = VALUES(withholding_tax_percent),
+            withholding_tax_amount = VALUES(withholding_tax_amount),
+            net_paid_amount = VALUES(net_paid_amount),
+            memo = VALUES(memo),
+            status = VALUES(status),
+            print_count = VALUES(print_count),
+            last_printed_at = VALUES(last_printed_at),
+            last_printed_by = VALUES(last_printed_by),
+            last_bank_type = VALUES(last_bank_type),
+            updated_at = NOW()`,
+          [
+            cleanCheque.id,
+            cleanCheque.chequeNumber || null,
+            cleanCheque.stubDate || new Date().toISOString().slice(0, 10),
+            cleanCheque.chequeDate || cleanCheque.stubDate || new Date().toISOString().slice(0, 10),
+            cleanCheque.fiscalYear,
+            cleanCheque.stubPayeeName || cleanCheque.chequePayeeName,
+            cleanCheque.chequePayeeName,
+            cleanCheque.dikaNumber || null,
+            cleanCheque.bankAccountNo || null,
+            cleanCheque.totalAmount || 0,
+            cleanCheque.totalAmountThaiText || '',
+            cleanCheque.withholdingTaxPercent || 0,
+            cleanCheque.withholdingTaxAmount || 0,
+            cleanCheque.netPaidAmount || cleanCheque.totalAmount || 0,
+            cleanCheque.memo || null,
+            cleanCheque.status || 'PENDING',
+            cleanCheque.createdBy,
+            cleanCheque.createdByUsername || 'admin',
+            cleanCheque.createdAt ? new Date(cleanCheque.createdAt) : now,
+            cleanCheque.printCount || 0,
+            cleanCheque.lastPrintedAt ? new Date(cleanCheque.lastPrintedAt) : null,
+            cleanCheque.lastPrintedBy || null,
+            cleanCheque.lastBankType || 'KTB',
+          ]
+        );
 
-      // Re-insert items
-      await pool.query('DELETE FROM cheque_items WHERE cheque_id = ?', [cleanCheque.id]);
-      if (cleanCheque.items && cleanCheque.items.length) {
-        for (const it of cleanCheque.items) {
-          await pool.query(
-            'INSERT INTO cheque_items (id, cheque_id, description, amount) VALUES (?, ?, ?, ?)',
-            [it.id, cleanCheque.id, cleanThaiMojibake(it.description), it.amount]
-          );
+        // Re-insert items
+        await conn.query('DELETE FROM cheque_items WHERE cheque_id = ?', [cleanCheque.id]);
+        if (cleanCheque.items && cleanCheque.items.length) {
+          for (const it of cleanCheque.items) {
+            await conn.query(
+              'INSERT INTO cheque_items (id, cheque_id, description, amount) VALUES (?, ?, ?, ?)',
+              [it.id, cleanCheque.id, cleanThaiMojibake(it.description), it.amount]
+            );
+          }
         }
-      }
+      });
 
       fallbackDb.saveCheque(cleanCheque, cleanCheque.createdBy);
       return cleanCheque;
@@ -972,10 +978,12 @@ export const mysqlCheques = {
     }
 
     try {
-      await pool.query(
-        `UPDATE cheques SET status = 'VOID', void_reason = ?, void_at = NOW(), void_by = ? WHERE id = ? OR dika_number = ?`,
-        [cleanThaiMojibake(reason), cleanThaiMojibake(voidBy), id, id]
-      );
+      await withConnection(async (conn) => {
+        await conn.query(
+          `UPDATE cheques SET status = 'VOID', void_reason = ?, void_at = NOW(), void_by = ? WHERE id = ? OR dika_number = ?`,
+          [cleanThaiMojibake(reason), cleanThaiMojibake(voidBy), id, id]
+        );
+      });
       fallbackDb.voidCheque(id, reason, voidBy);
       return true;
     } catch (err: any) {
@@ -1013,19 +1021,21 @@ export const mysqlTemplates = {
     if (!isMysqlConnected) return fallbackDb.getTemplates();
 
     try {
-      const [rows] = await pool.query<any[]>('SELECT * FROM bank_templates');
-      if (!rows.length) return fallbackDb.getTemplates();
+      return await withConnection(async (conn) => {
+        const [rows] = await conn.query<any[]>('SELECT * FROM bank_templates');
+        if (!rows.length) return fallbackDb.getTemplates();
 
-      const res: Partial<Record<BankType, BankTemplateConfig>> = {};
-      for (const r of rows) {
-        try {
-          const cfg = JSON.parse(r.config_json);
-          res[r.bank_type as BankType] = cfg;
-        } catch {
-          // ignore corrupted JSON
+        const res: Partial<Record<BankType, BankTemplateConfig>> = {};
+        for (const r of rows) {
+          try {
+            const cfg = JSON.parse(r.config_json);
+            res[r.bank_type as BankType] = cfg;
+          } catch {
+            // ignore corrupted JSON
+          }
         }
-      }
-      return { ...fallbackDb.getTemplates(), ...res } as Record<BankType, BankTemplateConfig>;
+        return { ...fallbackDb.getTemplates(), ...res } as Record<BankType, BankTemplateConfig>;
+      });
     } catch (err: any) {
       isMysqlConnected = false;
       lastError = err?.message || String(err);
@@ -1041,18 +1051,19 @@ export const mysqlTemplates = {
     }
 
     try {
-      await pool.query(
-        `INSERT INTO bank_templates (bank_type, bank_name_thai, bank_name_eng, bank_color, width_mm, height_mm, config_json)
-         VALUES (?, ?, ?, ?, ?, ?, ?)
-         ON DUPLICATE KEY UPDATE
-           bank_name_thai = VALUES(bank_name_thai),
-           bank_name_eng = VALUES(bank_name_eng),
-           bank_color = VALUES(bank_color),
-           width_mm = VALUES(width_mm),
-           height_mm = VALUES(height_mm),
-           config_json = VALUES(config_json),
-           updated_at = NOW()`,
-        [
+      await withConnection(async (conn) => {
+        await conn.query(
+          `INSERT INTO bank_templates (bank_type, bank_name_thai, bank_name_eng, bank_color, width_mm, height_mm, config_json)
+           VALUES (?, ?, ?, ?, ?, ?, ?)
+           ON DUPLICATE KEY UPDATE
+             bank_name_thai = VALUES(bank_name_thai),
+             bank_name_eng = VALUES(bank_name_eng),
+             bank_color = VALUES(bank_color),
+             width_mm = VALUES(width_mm),
+             height_mm = VALUES(height_mm),
+             config_json = VALUES(config_json),
+             updated_at = NOW()`,
+          [
           template.bankType,
           template.bankNameThai,
           template.bankNameEng,
@@ -1062,6 +1073,7 @@ export const mysqlTemplates = {
           JSON.stringify(template),
         ]
       );
+      });
       return true;
     } catch (err: any) {
       isMysqlConnected = false;
@@ -1095,30 +1107,32 @@ export const mysqlPrintLogs = {
     if (!isMysqlConnected) return fallbackDb.getPrintLogs(chequeId);
 
     try {
-      let query = 'SELECT * FROM cheque_print_logs';
-      const params: any[] = [];
-      if (chequeId) {
-        query += ' WHERE cheque_id = ?';
-        params.push(chequeId);
-      }
-      query += ' ORDER BY printed_at DESC';
+      return await withConnection(async (conn) => {
+        let query = 'SELECT * FROM cheque_print_logs';
+        const params: any[] = [];
+        if (chequeId) {
+          query += ' WHERE cheque_id = ?';
+          params.push(chequeId);
+        }
+        query += ' ORDER BY printed_at DESC';
 
-      const [rows] = await pool.query<any[]>(query, params);
-      return rows.map((r: any) => ({
-        id: r.id,
-        chequeId: r.cheque_id,
-        chequeNumber: r.cheque_number || '',
-        dikaNumber: r.dika_number || '',
-        chequePayeeName: r.cheque_payee_name,
-        totalAmount: Number(r.total_amount),
-        bankType: r.bank_type as BankType,
-        printNo: Number(r.print_no),
-        printedBy: r.printed_by,
-        printedByUsername: r.printed_by_username,
-        printedAt: r.printed_at ? new Date(r.printed_at).toISOString() : new Date().toISOString(),
-        reprintReason: r.reprint_reason || undefined,
-        reprintNote: r.reprint_note || undefined,
-      }));
+        const [rows] = await conn.query<any[]>(query, params);
+        return rows.map((r: any) => ({
+          id: r.id,
+          chequeId: r.cheque_id,
+          chequeNumber: r.cheque_number || '',
+          dikaNumber: r.dika_number || '',
+          chequePayeeName: r.cheque_payee_name,
+          totalAmount: Number(r.total_amount),
+          bankType: r.bank_type as BankType,
+          printNo: Number(r.print_no),
+          printedBy: r.printed_by,
+          printedByUsername: r.printed_by_username,
+          printedAt: r.printed_at ? new Date(r.printed_at).toISOString() : new Date().toISOString(),
+          reprintReason: r.reprint_reason || undefined,
+          reprintNote: r.reprint_note || undefined,
+        }));
+      });
     } catch (err: any) {
       isMysqlConnected = false;
       lastError = err?.message || String(err);
@@ -1130,47 +1144,49 @@ export const mysqlPrintLogs = {
     if (!isMysqlConnected) return fallbackDb.addPrintLog(log);
 
     try {
-      await pool.query(
-        `INSERT INTO cheque_print_logs (
-          id, cheque_id, cheque_number, dika_number, cheque_payee_name,
-          total_amount, bank_type, print_no, printed_by, printed_by_username,
-          printed_at, reprint_reason, reprint_note
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          log.id,
-          log.chequeId,
-          log.chequeNumber || null,
-          log.dikaNumber || null,
-          log.chequePayeeName,
-          log.totalAmount,
-          log.bankType,
-          log.printNo || 1,
-          log.printedBy,
-          log.printedByUsername || 'admin',
-          log.printedAt ? new Date(log.printedAt) : new Date(),
-          log.reprintReason || null,
-          log.reprintNote || null,
-        ]
-      );
+      await withConnection(async (conn) => {
+        await conn.query(
+          `INSERT INTO cheque_print_logs (
+            id, cheque_id, cheque_number, dika_number, cheque_payee_name,
+            total_amount, bank_type, print_no, printed_by, printed_by_username,
+            printed_at, reprint_reason, reprint_note
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            log.id,
+            log.chequeId,
+            log.chequeNumber || null,
+            log.dikaNumber || null,
+            log.chequePayeeName,
+            log.totalAmount,
+            log.bankType,
+            log.printNo || 1,
+            log.printedBy,
+            log.printedByUsername || 'admin',
+            log.printedAt ? new Date(log.printedAt) : new Date(),
+            log.reprintReason || null,
+            log.reprintNote || null,
+          ]
+        );
 
-      // Update cheque print count and status in cheques table
-      await pool.query(
-        `UPDATE cheques SET 
-          print_count = print_count + 1,
-          last_printed_at = ?,
-          last_printed_by = ?,
-          last_bank_type = ?,
-          cheque_number = COALESCE(?, cheque_number),
-          status = CASE WHEN status = 'VOID' THEN 'VOID' ELSE 'ISSUED' END
-         WHERE id = ?`,
-        [
-          log.printedAt ? new Date(log.printedAt) : new Date(),
-          log.printedBy,
-          log.bankType,
-          log.chequeNumber || null,
-          log.chequeId,
-        ]
-      );
+        // Update cheque print count and status in cheques table
+        await conn.query(
+          `UPDATE cheques SET 
+            print_count = print_count + 1,
+            last_printed_at = ?,
+            last_printed_by = ?,
+            last_bank_type = ?,
+            cheque_number = COALESCE(?, cheque_number),
+            status = CASE WHEN status = 'VOID' THEN 'VOID' ELSE 'ISSUED' END
+           WHERE id = ?`,
+          [
+            log.printedAt ? new Date(log.printedAt) : new Date(),
+            log.printedBy,
+            log.bankType,
+            log.chequeNumber || null,
+            log.chequeId,
+          ]
+        );
+      });
 
       return log;
     } catch (err: any) {
@@ -1189,18 +1205,20 @@ export const mysqlAuditLogs = {
     if (!isMysqlConnected) return fallbackDb.getAuditLogs();
 
     try {
-      const [rows] = await pool.query<any[]>(
-        'SELECT * FROM audit_logs ORDER BY timestamp DESC LIMIT 200'
-      );
-      return rows.map((r: any) => ({
-        id: r.id,
-        timestamp: r.timestamp ? new Date(r.timestamp).toISOString() : new Date().toISOString(),
-        username: r.username,
-        userFullName: r.user_full_name,
-        action: r.action,
-        target: r.target,
-        details: r.details,
-      }));
+      return await withConnection(async (conn) => {
+        const [rows] = await conn.query<any[]>(
+          'SELECT * FROM audit_logs ORDER BY timestamp DESC LIMIT 200'
+        );
+        return rows.map((r: any) => ({
+          id: r.id,
+          timestamp: r.timestamp ? new Date(r.timestamp).toISOString() : new Date().toISOString(),
+          username: r.username,
+          userFullName: r.user_full_name,
+          action: r.action,
+          target: r.target,
+          details: r.details,
+        }));
+      });
     } catch (err: any) {
       isMysqlConnected = false;
       lastError = err?.message || String(err);
@@ -1215,19 +1233,21 @@ export const mysqlAuditLogs = {
     }
 
     try {
-      await pool.query(
-        `INSERT INTO audit_logs (id, timestamp, username, user_full_name, action, target, details)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [
-          log.id,
-          log.timestamp ? new Date(log.timestamp) : new Date(),
-          log.username,
-          log.userFullName,
-          log.action,
-          log.target,
-          log.details,
-        ]
-      );
+      await withConnection(async (conn) => {
+        await conn.query(
+          `INSERT INTO audit_logs (id, timestamp, username, user_full_name, action, target, details)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          [
+            log.id,
+            log.timestamp ? new Date(log.timestamp) : new Date(),
+            log.username,
+            log.userFullName,
+            log.action,
+            log.target,
+            log.details,
+          ]
+        );
+      });
       return log;
     } catch (err: any) {
       isMysqlConnected = false;
@@ -1270,21 +1290,23 @@ export async function getDbStatus(): Promise<{
 
   if (connected) {
     try {
-      const [uRows] = await pool.query<any[]>('SELECT COUNT(*) as cnt FROM users');
-      const [cRows] = await pool.query<any[]>('SELECT COUNT(*) as cnt FROM cheques');
-      const [iRows] = await pool.query<any[]>('SELECT COUNT(*) as cnt FROM cheque_items');
-      const [pRows] = await pool.query<any[]>('SELECT COUNT(*) as cnt FROM cheque_print_logs');
-      const [aRows] = await pool.query<any[]>('SELECT COUNT(*) as cnt FROM audit_logs');
-      const [tRows] = await pool.query<any[]>('SELECT COUNT(*) as cnt FROM bank_templates');
+      await withConnection(async (conn) => {
+        const [uRows] = await conn.query<any[]>('SELECT COUNT(*) as cnt FROM users');
+        const [cRows] = await conn.query<any[]>('SELECT COUNT(*) as cnt FROM cheques');
+        const [iRows] = await conn.query<any[]>('SELECT COUNT(*) as cnt FROM cheque_items');
+        const [pRows] = await conn.query<any[]>('SELECT COUNT(*) as cnt FROM cheque_print_logs');
+        const [aRows] = await conn.query<any[]>('SELECT COUNT(*) as cnt FROM audit_logs');
+        const [tRows] = await conn.query<any[]>('SELECT COUNT(*) as cnt FROM bank_templates');
 
-      counts = {
-        users: uRows[0]?.cnt || 0,
-        cheques: cRows[0]?.cnt || 0,
-        chequeItems: iRows[0]?.cnt || 0,
-        printLogs: pRows[0]?.cnt || 0,
-        auditLogs: aRows[0]?.cnt || 0,
-        templates: tRows[0]?.cnt || 0,
-      };
+        counts = {
+          users: uRows[0]?.cnt || 0,
+          cheques: cRows[0]?.cnt || 0,
+          chequeItems: iRows[0]?.cnt || 0,
+          printLogs: pRows[0]?.cnt || 0,
+          auditLogs: aRows[0]?.cnt || 0,
+          templates: tRows[0]?.cnt || 0,
+        };
+      });
     } catch (e: any) {
       console.error('[MySQL Status Count Error]', e.message);
     }
