@@ -13,13 +13,13 @@ export const DB_CONFIG = {
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0,
-  connectTimeout: 2000,
+  connectTimeout: 8000,
   charset: 'utf8mb4',
 };
 
-// Fast non-blocking TCP socket check with 1.5s timeout
+// Fast non-blocking TCP socket check with 4s timeout
 // Prevents connect ETIMEDOUT from hanging HTTP threads for 10+ seconds
-export function checkTcpPort(host: string, port: number, timeoutMs = 1500): Promise<boolean> {
+export function checkTcpPort(host: string, port: number, timeoutMs = 4000): Promise<boolean> {
   return new Promise((resolve) => {
     const socket = new net.Socket();
     let settled = false;
@@ -125,7 +125,7 @@ let isMysqlConnected = false;
 let lastError: string | null = null;
 let tablesInitialized = false;
 let lastConnectAttemptTime = 0;
-const RECONNECT_COOLDOWN_MS = 25000; // 25s cooldown between automatic reconnection attempts
+const RECONNECT_COOLDOWN_MS = 5000; // 5s cooldown between automatic reconnection attempts
 
 function attachPoolErrorHandler(p: any) {
   if (!p) return;
@@ -133,12 +133,6 @@ function attachPoolErrorHandler(p: any) {
     isMysqlConnected = false;
     lastError = err?.message || String(err);
     console.warn(`[MySQL Pool Notice] Host ${DB_CONFIG.host}:${DB_CONFIG.port} - ${lastError}. Fallback active.`);
-  });
-  p.on('connection', (connection: any) => {
-    connection.query("SET NAMES 'utf8mb4' COLLATE 'utf8mb4_unicode_ci'");
-    connection.query("SET character_set_client = 'utf8mb4'");
-    connection.query("SET character_set_connection = 'utf8mb4'");
-    connection.query("SET character_set_results = 'utf8mb4'");
   });
 }
 
@@ -149,10 +143,13 @@ attachPoolErrorHandler(pool);
 export async function withConnection<T>(fn: (conn: mysql.PoolConnection) => Promise<T>): Promise<T> {
   const conn = await pool.getConnection();
   try {
-    await conn.query("SET NAMES 'utf8mb4' COLLATE 'utf8mb4_unicode_ci'");
-    await conn.query("SET character_set_client = 'utf8mb4'");
-    await conn.query("SET character_set_connection = 'utf8mb4'");
-    await conn.query("SET character_set_results = 'utf8mb4'");
+    try {
+      await conn.query("SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci");
+    } catch {
+      try {
+        await conn.query("SET NAMES utf8mb4");
+      } catch {}
+    }
     return await fn(conn);
   } finally {
     conn.release();
@@ -177,7 +174,7 @@ export async function updateDbConfig(newConfig: {
     await pool.end();
   } catch {}
 
-  pool = mysql.createPool({ ...DB_CONFIG, connectTimeout: 2000 });
+  pool = mysql.createPool({ ...DB_CONFIG, connectTimeout: 8000 });
   attachPoolErrorHandler(pool);
   tablesInitialized = false;
   const connected = await testConnection(true);
@@ -198,8 +195,8 @@ export async function testConnection(force: boolean = false): Promise<boolean> {
   lastConnectAttemptTime = now;
 
   try {
-    // 1. Fast TCP reachability check (1.5s timeout)
-    const tcpAlive = await checkTcpPort(DB_CONFIG.host, DB_CONFIG.port, 1500);
+    // 1. Fast TCP reachability check (4s timeout)
+    const tcpAlive = await checkTcpPort(DB_CONFIG.host, DB_CONFIG.port, 4000);
     if (!tcpAlive) {
       isMysqlConnected = false;
       lastError = `connect ETIMEDOUT (เซิร์ฟเวอร์ MySQL ที่ ${DB_CONFIG.host}:${DB_CONFIG.port} ไม่ตอบสนอง หรือติด Windows Firewall)`;
@@ -213,7 +210,7 @@ export async function testConnection(force: boolean = false): Promise<boolean> {
         port: DB_CONFIG.port,
         user: DB_CONFIG.user,
         password: DB_CONFIG.password,
-        connectTimeout: 2000,
+        connectTimeout: 4000,
       });
       await rootConn.query(`CREATE DATABASE IF NOT EXISTS \`${DB_CONFIG.database}\` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
       await rootConn.end();
@@ -222,13 +219,19 @@ export async function testConnection(force: boolean = false): Promise<boolean> {
     }
 
     const connection = await pool.getConnection();
-    await connection.ping();
-    connection.release();
+    try {
+      await connection.ping();
+    } finally {
+      connection.release();
+    }
     isMysqlConnected = true;
     lastError = null;
 
     if (!tablesInitialized) {
-      await ensureTablesAndSeeds();
+      ensureTablesAndSeeds().catch(err => {
+        console.warn('[MySQL Init Notice]', err?.message);
+      });
+      tablesInitialized = true;
     }
     return true;
   } catch (err: any) {
@@ -245,11 +248,14 @@ export async function ensureTablesAndSeeds(): Promise<void> {
   try {
     const connection = await pool.getConnection();
     try {
-      await connection.query("SET FOREIGN_KEY_CHECKS = 0");
-      await connection.query("SET NAMES 'utf8mb4' COLLATE 'utf8mb4_unicode_ci'");
-      await connection.query("SET character_set_client = 'utf8mb4'");
-      await connection.query("SET character_set_connection = 'utf8mb4'");
-      await connection.query("SET character_set_results = 'utf8mb4'");
+      await connection.query("SET FOREIGN_KEY_CHECKS = 0").catch(() => {});
+      try {
+        await connection.query("SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci");
+      } catch {
+        try {
+          await connection.query("SET NAMES utf8mb4");
+        } catch {}
+      }
       try {
         await connection.query(`ALTER DATABASE \`${DB_CONFIG.database}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
       } catch {}
@@ -1378,11 +1384,14 @@ export async function repairThaiCharset(): Promise<{ success: boolean; message: 
   try {
     const connection = await pool.getConnection();
     try {
-      await connection.query("SET FOREIGN_KEY_CHECKS = 0");
-      await connection.query("SET NAMES 'utf8mb4' COLLATE 'utf8mb4_unicode_ci'");
-      await connection.query("SET character_set_client = 'utf8mb4'");
-      await connection.query("SET character_set_connection = 'utf8mb4'");
-      await connection.query("SET character_set_results = 'utf8mb4'");
+      await connection.query("SET FOREIGN_KEY_CHECKS = 0").catch(() => {});
+      try {
+        await connection.query("SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci");
+      } catch {
+        try {
+          await connection.query("SET NAMES utf8mb4");
+        } catch {}
+      }
       try {
         await connection.query(`ALTER DATABASE \`${DB_CONFIG.database}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
       } catch {}

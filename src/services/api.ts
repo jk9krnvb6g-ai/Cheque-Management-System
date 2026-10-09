@@ -7,25 +7,10 @@ import { Cheque, BankTemplateConfig, BankType, User, ChequePrintLog, AuditLog } 
 
 let cachedWorkingUrl: string | null = null;
 
-// ฟังก์ชันหา URL ของ Backend API บนพอร์ต 3002
+// ฟังก์ชันหา URL ของ Backend API
 export function getApiBaseUrl(): string {
   if (typeof window === 'undefined') return '/api/Cash_Cheque';
 
-  // ล้างค่า URL เก่าที่อาจตกค้างใน LocalStorage
-  try {
-    localStorage.removeItem('cheque_sys_api_url');
-  } catch {}
-
-  const host = window.location.hostname;
-  const port = window.location.port;
-
-  // 1. ถ้าเข้าใช้งานผ่านเครื่องแม่ข่ายในวง LAN หรือ Localhost แต่ไม่ได้เปิดผ่านพอร์ต 3002
-  // (เช่น เปิดผ่าน IIS พอร์ต 80 หรือ 3001) ให้เชื่อมต่อไปยังพอร์ต 3002 ที่รัน API อยู่
-  if ((host === 'localhost' || host === '127.0.0.1' || host.startsWith('10.') || host.startsWith('192.168.')) && port !== '3002') {
-    return `http://${host}:3002/api/Cash_Cheque`;
-  }
-
-  // 2. ถ้าเปิดใช้งานผ่านพอร์ต 3002 โดยตรง หรือผ่าน Cloud Preview (AI Studio)
   const pathname = window.location.pathname || '';
   if (pathname.startsWith('/Cash_Cheque')) {
     return '/Cash_Cheque/api';
@@ -52,13 +37,12 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     cachedWorkingUrl,
     getApiBaseUrl(),
     '/Cash_Cheque/api',
-    '/api',
     '/api/Cash_Cheque',
+    '/api',
     `http://${host}:3002/api/Cash_Cheque`,
+    `http://${host}:3002/Cash_Cheque/api`,
     `http://${host}:3003/api`,
     `http://${host}:3003/Cash_Cheque/api`,
-    'http://localhost:3002/api/Cash_Cheque',
-    'http://localhost:3003/api',
   ];
 
   const uniqueBases = Array.from(new Set(candidateBases.filter((b): b is string => Boolean(b && b.trim()))));
