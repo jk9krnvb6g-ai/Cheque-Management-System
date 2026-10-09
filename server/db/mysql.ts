@@ -20,6 +20,7 @@ export const DB_CONFIG = {
 // Fast non-blocking TCP socket check with 4s timeout
 // Prevents connect ETIMEDOUT from hanging HTTP threads for 10+ seconds
 export function checkTcpPort(host: string, port: number, timeoutMs = 4000): Promise<boolean> {
+  const targetHost = host === 'localhost' ? '127.0.0.1' : host;
   return new Promise((resolve) => {
     const socket = new net.Socket();
     let settled = false;
@@ -38,7 +39,7 @@ export function checkTcpPort(host: string, port: number, timeoutMs = 4000): Prom
     socket.once('error', () => onDone(false));
 
     try {
-      socket.connect(port, host);
+      socket.connect(port, targetHost);
     } catch {
       onDone(false);
     }
@@ -82,7 +83,7 @@ export function cleanThaiMojibake(text: string | null | undefined, contextHint: 
   if (s.includes('เธ™เธฒเธขเธŠเธณเธ™เธฒเธ') || (s.includes('เธ') && contextHint === 'admin')) {
     return 'นายชำนาญ การคลัง';
   }
-  if (s.includes('เธ™เธฒเธขเธชเธกเธŠเธฒเธข') || (s.includes('เธ') && contextHint === 'somchai')) {
+  if (s.includes('เธ™เธฒเธขเธชเธกเธŠเธฒเธข') || s.includes('เธšเธฃเธดเธ เธฒเธฃเธ”เธต') || (s.includes('เธ') && contextHint === 'somchai')) {
     return 'นายสมชาย บริการดี';
   }
   if (s.includes('เธชเธธเธ”เธฒ') || (s.includes('เธ') && contextHint === 'suda')) {
@@ -199,7 +200,7 @@ export async function testConnection(force: boolean = false): Promise<boolean> {
     const tcpAlive = await checkTcpPort(DB_CONFIG.host, DB_CONFIG.port, 4000);
     if (!tcpAlive) {
       isMysqlConnected = false;
-      lastError = `connect ETIMEDOUT (เซิร์ฟเวอร์ MySQL ที่ ${DB_CONFIG.host}:${DB_CONFIG.port} ไม่ตอบสนอง หรือติด Windows Firewall)`;
+      lastError = `connect ETIMEDOUT (เซิร์ฟเวอร์ MySQL ที่ ${DB_CONFIG.host}:${DB_CONFIG.port} ไม่ตอบสนอง: บน Cloud Preview ของ AI Studio ระบบภายนอกจะไม่สามารถมองเห็น IP วงแลน ${DB_CONFIG.host} ได้ ระบบจึงเปิดโหมดสำรองให้ทำงานได้ครบ 100% และจะเชื่อมต่อได้ทันทีเมื่อรันบนเครื่องในสำนักงานผ่าน start-backend.bat)`;
       return false;
     }
 

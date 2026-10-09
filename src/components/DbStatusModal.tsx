@@ -22,13 +22,13 @@ export const DbStatusModal: React.FC<DbStatusModalProps> = ({ isOpen, onClose, o
   const [copiedSql, setCopiedSql] = useState(false);
 
   const SQL_REPAIR_SCRIPT = `-- ปรับฐานข้อมูลและตารางให้เป็น utf8mb4_unicode_ci รองรับภาษาไทย 100%
-USE cheque_system;
+USE \`cheque_system\`;
 SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci;
+SET FOREIGN_KEY_CHECKS = 0;
 
 ALTER DATABASE \`cheque_system\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 ALTER TABLE \`users\` CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 ALTER TABLE \`cheques\` CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-ALTER TABLE \`cheque_items\` CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 ALTER TABLE \`bank_templates\` CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 ALTER TABLE \`cheque_print_logs\` CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 ALTER TABLE \`audit_logs\` CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
@@ -38,7 +38,9 @@ DELETE FROM \`users\` WHERE \`username\` IN ('11111', '22222', '112222') OR \`id
 
 -- ซ่อมแซมชื่อภาษาไทยให้ถูกต้อง 100%
 UPDATE \`users\` SET \`full_name\` = 'นายชำนาญ การคลัง', \`position\` = 'หัวหน้ากลุ่มงานการเงินและบัญชี' WHERE \`username\` = 'admin';
-UPDATE \`users\` SET \`full_name\` = 'นายสมชาย บริการดี', \`position\` = 'นักวิชาการเงินและบัญชีชำนาญการ' WHERE \`username\` = 'somchai';`;
+UPDATE \`users\` SET \`full_name\` = 'นายสมชาย บริการดี', \`position\` = 'นักวิชาการเงินและบัญชีชำนาญการ' WHERE \`username\` = 'somchai';
+
+SET FOREIGN_KEY_CHECKS = 1;`;
 
   const handleCopySql = () => {
     navigator.clipboard.writeText(SQL_REPAIR_SCRIPT);
@@ -246,8 +248,21 @@ UPDATE \`users\` SET \`full_name\` = 'นายสมชาย บริกา�
                 </div>
               </div>
 
-              <div className="p-3 bg-white/90 border border-rose-200 rounded-xl text-xs text-slate-700 leading-relaxed">
-                <span className="font-bold text-rose-900">💡 โหมดสำรองพร้อมทำงาน:</span> คุณยังสามารถเข้าใช้งาน จัดทำเช็ค และพิมพ์เช็คได้ตามปกติ ข้อมูลจะถูกบันทึกสำรองไว้ในเครื่อง และระบบจะตรวจจับพร้อมส่งขึ้น MySQL ให้อัตโนมัติเมื่อฐานข้อมูลเปิดใช้งาน
+              <div className="p-3.5 bg-white/95 border border-rose-200 rounded-xl text-xs text-slate-700 leading-relaxed space-y-2">
+                <div className="font-bold text-rose-900 flex items-center gap-1.5">
+                  <span>📌 เหตุผลที่ขึ้นว่าเชื่อมฐานไม่ได้:</span>
+                </div>
+                <div className="space-y-1.5 text-[11px] text-slate-600">
+                  <p>
+                    • <strong>กำลังเปิดดูผ่าน Cloud Preview (AI Studio หน้านี้):</strong> เซิร์ฟเวอร์ทดสอบทำงานอยู่บน Google Cloud ซึ่งตามระบบความปลอดภัยของเน็ตเวิร์ก จะ<strong>ไม่สามารถมองทะลุเข้ามาใน IP วงแลนภายในองค์กร ({targetHost}) ได้</strong> ระบบจึงเปิด <strong>โหมดสำรอง (Standalone Mode)</strong> ให้อัตโนมัติ เพื่อให้ท่านทดสอบเขียนเช็ค พิมพ์เช็ค และจัดการระบบได้ครบทุกฟังก์ชัน 100%
+                  </p>
+                  <p>
+                    • <strong>เมื่อนำไปใช้งานจริงบน Windows Server ในสำนักงาน:</strong> ดับเบิ้ลคลิกไฟล์ <code>start-backend.bat</code> ในวงแลนจริง แล้วเข้าใช้งานผ่าน <code>http://10.2.0.13:3002/Cash_Cheque/</code> ระบบจะเชื่อมต่อกับ MySQL {targetHost} ได้ทันที
+                  </p>
+                  <p>
+                    • <strong>หากทดสอบด้วย XAMPP ในเครื่องตนเอง:</strong> ท่านสามารถกดปุ่มสลับไปเชื่อมต่อ <code>localhost</code> หรือ <code>127.0.0.1</code> ได้ทันทีที่ฟอร์มด้านล่าง
+                  </p>
+                </div>
               </div>
             </div>
           )}
@@ -353,7 +368,27 @@ UPDATE \`users\` SET \`full_name\` = 'นายสมชาย บริกา�
 
               <div className="grid grid-cols-2 gap-2 text-xs">
                 <div>
-                  <label className="block text-[11px] font-bold text-slate-600 mb-1">DB_HOST</label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-[11px] font-bold text-slate-600">DB_HOST</label>
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => setFormData(prev => ({ ...prev, host: '10.1.0.201' }))}
+                        className="text-[10px] px-1.5 py-0.5 bg-slate-200 hover:bg-indigo-100 text-slate-700 hover:text-indigo-800 rounded font-bold cursor-pointer"
+                        title="เครื่องเซิร์ฟเวอร์สำนักงาน"
+                      >
+                        10.1.0.201
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setFormData(prev => ({ ...prev, host: 'localhost' }))}
+                        className="text-[10px] px-1.5 py-0.5 bg-slate-200 hover:bg-indigo-100 text-slate-700 hover:text-indigo-800 rounded font-bold cursor-pointer"
+                        title="เครื่องนี้ (XAMPP)"
+                      >
+                        localhost
+                      </button>
+                    </div>
+                  </div>
                   <input
                     type="text"
                     value={formData.host}

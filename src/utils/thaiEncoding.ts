@@ -32,7 +32,14 @@ const KNOWN_PHRASE_MAPPINGS: Array<{ match: (t: string) => boolean; result: stri
     result: 'นายชำนาญ การคลัง',
   },
   {
-    match: (t) => t.includes('ธเธฒเธขเธชเธก') || t.includes('เธชเธกเธ') || t.includes('เธฃเธดเธ') || t.includes('สมชาย') || t.includes('somchai'),
+    match: (t) =>
+      t.includes('เธ™เธฒเธขเธชเธกเธŠเธฒเธข') ||
+      t.includes('เธšเธฃเธดเธ เธฒเธฃเธ”เธต') ||
+      t.includes('ธเธฒเธขเธชเธก') ||
+      t.includes('เธชเธกเธ') ||
+      t.includes('เธฃเธดเธ') ||
+      t.includes('สมชาย') ||
+      t.includes('somchai'),
     result: 'นายสมชาย บริการดี',
   },
   {

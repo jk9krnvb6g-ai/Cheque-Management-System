@@ -18,8 +18,8 @@ title Build Cash Cheque System (IIS Admin Mode)
 cls
 
 echo ======================================================================
-echo    ระบบจัดทำและพิมพ์เช็ค (Cash Cheque System) - SAFE BUILD FOR IIS
-echo    URL ปลายทาง: https://10.2.0.13:3001/Cash_Cheque/
+echo    ระบบจัดทำและพิมพ์เช็ค (Cash Cheque System) - SAFE BUILD
+echo    URL หลักที่ใช้งานได้ 100%: http://10.2.0.13:3002/Cash_Cheque/
 echo ======================================================================
 echo.
 echo [NOTE] ขอสิทธิ์ Administrator เรียบร้อยแล้ว
@@ -56,12 +56,11 @@ echo ======================================================================
 echo [SUCCESS] คอมไพล์และติดตั้งระบบจัดทำและพิมพ์เช็คสำเร็จเรียบร้อยแล้ว!
 echo ======================================================================
 echo.
-echo [ข้อแนะนำสำคัญ] เพื่อให้ระบบเชื่อมต่อฐานข้อมูล MySQL 10.1.0.201 ได้:
-echo 1. ดับเบิ้ลคลิกไฟล์ start-backend.bat หรือ start-backend-hidden.vbs
-echo    เพื่อเปิดเซิร์ฟเวอร์ Backend API (พอร์ต 3002)
+echo [ขั้นตอนสำคัญในการเปิดใช้งาน เพื่อให้เชื่อมต่อฐานข้อมูล MySQL ได้]:
+echo 1. ดับเบิ้ลคลิกไฟล์ start-backend.bat เพื่อเปิดเซิร์ฟเวอร์ Backend API (พอร์ต 3002)
 echo.
-echo 2. เข้าใช้งานระบบได้ที่:
-echo    👉 ผ่าน IIS:      http://10.2.0.13/Cash_Cheque/ หรือ https://10.2.0.13:3001/Cash_Cheque/
-echo    👉 ผ่าน Node.js:  http://10.2.0.13:3002/Cash_Cheque/ (แนะนำ เสถียร 100%)
+echo 2. ให้เปิดเบราว์เซอร์ไปที่ลิงก์นี้เท่านั้น (ไม่เปิดผ่านพอร์ต 3001 เพราะไม่มี API):
+echo    👉 http://10.2.0.13:3002/Cash_Cheque/ (แนะนำ ใช้งานได้ 100%)
+echo    👉 หรือ http://localhost:3002/Cash_Cheque/
 echo.
 pause

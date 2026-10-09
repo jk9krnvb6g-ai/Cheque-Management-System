@@ -13,6 +13,7 @@
 /*!40101 SET @OLD_SQL_MODE=@@SQL_MODE, SQL_MODE='NO_AUTO_VALUE_ON_ZERO' */;
 /*!40111 SET @OLD_SQL_NOTES=@@SQL_NOTES, SQL_NOTES=0 */;
 
+-- 1. สร้างฐานข้อมูล UTF-8 ภาษาไทย
 CREATE DATABASE IF NOT EXISTS `cheque_system` 
 DEFAULT CHARACTER SET utf8mb4 
 COLLATE utf8mb4_unicode_ci;
@@ -28,11 +29,19 @@ SET character_set_results = utf8mb4;
 SET collation_connection = utf8mb4_unicode_ci;
 SET FOREIGN_KEY_CHECKS = 0;
 
+-- ลบตารางเดิมอย่างปลอดภัย (เพื่อป้องกันปัญหาตารางเก่าเป็น latin1 หรือติดปัญหา Foreign Key)
+DROP TABLE IF EXISTS `cheque_items`;
+DROP TABLE IF EXISTS `cheque_print_logs`;
+DROP TABLE IF EXISTS `cheques`;
+DROP TABLE IF EXISTS `audit_logs`;
+DROP TABLE IF EXISTS `bank_templates`;
+DROP TABLE IF EXISTS `users`;
+
 -- ====================================================================================================
 -- ตารางที่ 1: `users`
 -- คำอธิบาย: ตารางเก็บข้อมูลบัญชีสมาชิกผู้ใช้งานระบบ การกำหนดสิทธิ์ และสถานะการเข้าใช้งาน
 -- ====================================================================================================
-CREATE TABLE IF NOT EXISTS `users` (
+CREATE TABLE `users` (
   `id` VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'รหัสประจำตัวผู้ใช้ (Primary Key) เช่น user_admin, user_somchai',
   `username` VARCHAR(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL UNIQUE COMMENT 'ชื่อผู้ใช้สำหรับเข้าสู่ระบบ (ห้ามซ้ำกัน) เช่น admin, somchai',
   `password_hash` VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'รหัสผ่านที่ผ่านการเข้ารหัสความปลอดภัย (Hash Password)',
@@ -50,7 +59,7 @@ COMMENT='ตารางที่ 1: ข้อมูลสมาชิกแล�
 -- ตารางที่ 2: `cheques`
 -- คำอธิบาย: ตารางหลักสำหรับจัดเก็บข้อมูลเช็ค เลขที่ฎีกาคลังรับ ยอดเงินสั่งจ่าย และประวัติการจัดทำ
 -- ====================================================================================================
-CREATE TABLE IF NOT EXISTS `cheques` (
+CREATE TABLE `cheques` (
   `id` VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'รหัสประจำรายการเช็ค (Primary Key) เช่น chq_123_69',
   `cheque_number` VARCHAR(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'เลขที่เช็คจริง 7-8 หลักที่พิมพ์ลงบนกระดาษเช็ค เช่น 1029301',
   `stub_date` DATE NOT NULL COMMENT 'วันที่บันทึกบนต้นขั้วเช็ค (รูปแบบ ค.ศ. YYYY-MM-DD)',
@@ -74,73 +83,71 @@ CREATE TABLE IF NOT EXISTS `cheques` (
   `created_by_username` VARCHAR(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Username ของผู้จัดทำรายการเช็ค',
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT 'วันและเวลาที่สร้างรายการเช็คฉบับนี้',
   `updated_by` VARCHAR(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'ชื่อ-นามสกุลของผู้แก้ไขข้อมูลรายการเช็คล่าสุด',
-  `updated_at` TIMESTAMP NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP COMMENT 'วันและเวลาที่แก้ไขข้อมูลล่าสุด',
-  `print_count` INT NOT NULL DEFAULT 0 COMMENT 'จำนวนครั้งที่สั่งพิมพ์เช็คฉบับนี้ (0 = ยังไม่เคยพิมพ์, 1 = พิมพ์แล้ว, 2+ = พิมพ์ซ้ำ)',
+  `updated_at` TIMESTAMP NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP COMMENT 'วันและเวลาที่มีการแก้ไขข้อมูลล่าสุด',
+  `print_count` INT NOT NULL DEFAULT 0 COMMENT 'จำนวนครั้งที่สั่งพิมพ์เช็คฉบับนี้แล้ว (0 = ยังไม่เคยพิมพ์)',
   `last_printed_at` TIMESTAMP NULL DEFAULT NULL COMMENT 'วันและเวลาที่สั่งพิมพ์เช็คครั้งล่าสุด',
   `last_printed_by` VARCHAR(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'ชื่อ-นามสกุลของผู้สั่งพิมพ์เช็คครั้งล่าสุด',
-  `last_bank_type` VARCHAR(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT 'KTB' COMMENT 'รหัสธนาคารที่ใช้สั่งพิมพ์เช็คล่าสุด เช่น KTB, BAAC, GSB',
+  `last_bank_type` VARCHAR(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT 'KTB' COMMENT 'รหัสธนาคารที่เลือกใช้พิมพ์ครั้งล่าสุด (KTB, BAAC, GSB)',
   PRIMARY KEY (`id`),
   INDEX `idx_cheques_fiscal` (`fiscal_year`),
   INDEX `idx_cheques_status` (`status`),
-  INDEX `idx_cheques_dika` (`dika_number`),
-  INDEX `idx_cheques_number` (`cheque_number`)
+  INDEX `idx_cheques_dika` (`dika_number`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci 
-COMMENT='ตารางที่ 2: ข้อมูลเช็คและการสั่งจ่ายเงินตามฎีกา';
+COMMENT='ตารางที่ 2: ทะเบียนคุมเช็คและฎีกาเบิกจ่ายเงิน';
 
 
 -- ====================================================================================================
 -- ตารางที่ 3: `cheque_items`
--- คำอธิบาย: ตารางเก็บรายการฎีกาย่อยหรือรายการค่าใช้จ่าย (1 เช็คสามารถมีได้หลายรายการย่อย)
+-- คำอธิบาย: ตารางเก็บรายละเอียดรายการย่อยหรือฎีกาย่อยที่รวมอยู่ในเช็คฉบับเดียว
 -- ====================================================================================================
-CREATE TABLE IF NOT EXISTS `cheque_items` (
-  `id` VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'รหัสรายการย่อย (Primary Key) เช่น it_1, it_2',
-  `cheque_id` VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'รหัสเช็คที่รายการนี้สังกัดอยู่ (Foreign Key เชื่อมกับตาราง cheques.id)',
-  `description` VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'รายละเอียดรายการค่าใช้จ่าย เช่น ค่าวัสดุสำนักงาน, ค่าจ้างเหมาบริการ, ค่าเวชภัณฑ์ยา',
-  `amount` DECIMAL(14,2) NOT NULL DEFAULT 0.00 COMMENT 'จำนวนเงินของรายการย่อยนี้ (บาท)',
+CREATE TABLE `cheque_items` (
+  `id` VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'รหัสประจำรายการย่อย (Primary Key)',
+  `cheque_id` VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'รหัสเช็คหลักที่เชื่อมโยง (Foreign Key -> cheques.id)',
+  `description` VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'คำอธิบายรายการสั่งจ่าย เช่น ค่าจ้างเหมาบริการ, ค่าวัสดุสำนักงาน',
+  `amount` DECIMAL(14,2) NOT NULL DEFAULT 0.00 COMMENT 'จำนวนเงินตามรายการ (บาท)',
   PRIMARY KEY (`id`),
   INDEX `idx_items_cheque_id` (`cheque_id`),
   CONSTRAINT `fk_items_cheque` FOREIGN KEY (`cheque_id`) REFERENCES `cheques` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci 
-COMMENT='ตารางที่ 3: รายการฎีกาย่อยและค่าใช้จ่ายของเช็ค';
+COMMENT='ตารางที่ 3: รายการย่อยตามฎีกาของเช็คแต่ละฉบับ';
 
 
 -- ====================================================================================================
 -- ตารางที่ 4: `cheque_print_logs`
--- คำอธิบาย: ตารางบันทึกประวัติการสั่งพิมพ์เช็คทุกครั้ง (Append-Only ห้ามแก้ไขหรือลบ เพื่อความโปร่งใสและตรวจสอบได้)
+-- คำอธิบาย: ตารางบันทึกประวัติและหลักฐานการสั่งพิมพ์เช็คทุกครั้ง (ป้องกันการพิมพ์ซ้ำซ้อน)
 -- ====================================================================================================
-CREATE TABLE IF NOT EXISTS `cheque_print_logs` (
-  `id` VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'รหัสบันทึกประวัติการพิมพ์ (Primary Key) เช่น prt_1728000000',
-  `cheque_id` VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'รหัสเช็คที่สั่งพิมพ์ (Foreign Key เชื่อมกับตาราง cheques.id)',
-  `cheque_number` VARCHAR(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'เลขที่เช็คที่ใช้พิมพ์ในครั้งนั้น',
-  `dika_number` VARCHAR(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'เลขที่ฎีกาที่สั่งพิมพ์ในครั้งนั้น',
-  `cheque_payee_name` VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'ชื่อผู้รับเงินในรอบที่สั่งพิมพ์',
-  `total_amount` DECIMAL(14,2) NOT NULL DEFAULT 0.00 COMMENT 'ยอดเงินสั่งจ่ายในรอบที่สั่งพิมพ์',
-  `bank_type` VARCHAR(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'รหัสธนาคารที่พิมพ์ เช่น KTB, BAAC, GSB',
-  `print_no` INT NOT NULL DEFAULT 1 COMMENT 'ลำดับครั้งที่พิมพ์ (1 = พิมพ์ครั้งแรก, 2+ = พิมพ์ซ้ำ)',
-  `printed_by` VARCHAR(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'ชื่อ-นามสกุลของผู้กดสั่งพิมพ์เช็ค',
-  `printed_by_username` VARCHAR(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Username ของผู้กดสั่งพิมพ์เช็ค',
-  `printed_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT 'วันและเวลาที่กดสั่งพิมพ์เช็คจริง',
-  `reprint_reason` VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'เหตุผลในการขอพิมพ์ซ้ำ (กรณี print_no >= 2) เช่น กระดาษติด, เครื่องพิมพ์กินกระดาษ, พิมพ์ผิด',
+CREATE TABLE `cheque_print_logs` (
+  `id` VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'รหัสประจำประวัติการพิมพ์ (Primary Key)',
+  `cheque_id` VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'รหัสเช็คที่ถูกสั่งพิมพ์',
+  `cheque_number` VARCHAR(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'เลขที่เช็คที่ถูกพิมพ์',
+  `dika_number` VARCHAR(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'เลขที่ฎีกาคลังรับ',
+  `cheque_payee_name` VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'ชื่อผู้รับเงินบนเช็ค',
+  `total_amount` DECIMAL(14,2) NOT NULL DEFAULT 0.00 COMMENT 'ยอดเงินสุทธิที่สั่งพิมพ์',
+  `bank_type` VARCHAR(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'ธนาคารที่สั่งพิมพ์ (KTB, BAAC, GSB)',
+  `print_no` INT NOT NULL DEFAULT 1 COMMENT 'ลำดับครั้งที่พิมพ์ของเช็คฉบับนี้ (ครั้งที่ 1, 2, 3...)',
+  `printed_by` VARCHAR(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'ชื่อ-นามสกุลของผู้สั่งพิมพ์',
+  `printed_by_username` VARCHAR(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Username ของผู้สั่งพิมพ์',
+  `printed_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT 'วันและเวลาที่สั่งพิมพ์',
+  `reprint_reason` VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'เหตุผลในการขอพิมพ์ซ้ำ (เช่น กระดาษติด, เครื่องพิมพ์หมึกจาง)',
   `reprint_note` TEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'หมายเหตุเพิ่มเติมกรณีขอพิมพ์ซ้ำ',
   PRIMARY KEY (`id`),
-  INDEX `idx_print_cheque` (`cheque_id`),
-  INDEX `idx_print_date` (`printed_at`)
+  INDEX `idx_print_cheque` (`cheque_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci 
-COMMENT='ตารางที่ 4: บันทึกประวัติการสั่งพิมพ์เช็ค (Audit Trail)';
+COMMENT='ตารางที่ 4: บันทึกประวัติและหลักฐานการสั่งพิมพ์เช็ค';
 
 
 -- ====================================================================================================
 -- ตารางที่ 5: `audit_logs`
--- คำอธิบาย: ตารางบันทึกกิจกรรมการใช้งานระบบ (Audit Trail) สำหรับตรวจสอบย้อนหลังว่าใครทำอะไรในระบบ
+-- คำอธิบาย: ตารางบันทึกกิจกรรมและประวัติการดำเนินงานของผู้ใช้ในระบบ (Audit Trail)
 -- ====================================================================================================
-CREATE TABLE IF NOT EXISTS `audit_logs` (
-  `id` VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'รหัสบันทึกประวัติกิจกรรม (Primary Key) เช่น log_1728000000',
-  `timestamp` TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT 'วันและเวลาที่เกิดกิจกรรมขึ้นในระบบ',
+CREATE TABLE `audit_logs` (
+  `id` VARCHAR(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'รหัสประจำบันทึกกิจกรรม (Primary Key)',
+  `timestamp` TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT 'วันและเวลาที่เกิดกิจกรรม',
   `username` VARCHAR(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Username ของผู้กระทำกิจกรรม',
   `user_full_name` VARCHAR(150) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'ชื่อ-นามสกุลจริงของผู้กระทำกิจกรรม',
-  `action` VARCHAR(30) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'ประเภทของกิจกรรม เช่น LOGIN (เข้าสู่ระบบ), CREATE (สร้างเช็ค), UPDATE (แก้ไข), DELETE (ลบ), VOID (ยกเลิก)',
+  `action` VARCHAR(30) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'ประเภทกิจกรรม เช่น LOGIN, CREATE, UPDATE, DELETE, VOID',
   `target` VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'เป้าหมายของกิจกรรม เช่น ฎีกาเลขที่ 123/69 หรือ บัญชีผู้ใช้ somchai',
-  `details` TEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'รายละเอียดของกิจกรรมที่เกิดขึ้น เช่น สร้างเช็คสั่งจ่ายบริษัท ABC จำนวน 25,000 บาท',
+  `details` TEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'รายละเอียดของกิจกรรมที่เกิดขึ้น',
   PRIMARY KEY (`id`),
   INDEX `idx_audit_time` (`timestamp`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci 
@@ -151,7 +158,7 @@ COMMENT='ตารางที่ 5: บันทึกกิจกรรมก�
 -- ตารางที่ 6: `bank_templates`
 -- คำอธิบาย: ตารางเก็บแม่แบบพิกัดตำแหน่งพิมพ์เช็ค ขนาดกระดาษ และฟอนต์ของแต่ละธนาคาร
 -- ====================================================================================================
-CREATE TABLE IF NOT EXISTS `bank_templates` (
+CREATE TABLE `bank_templates` (
   `bank_type` VARCHAR(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'รหัสตัวย่อธนาคาร (Primary Key) เช่น KTB, BAAC, GSB',
   `bank_name_thai` VARCHAR(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'ชื่อธนาคารภาษาไทย เช่น ธนาคารกรุงไทย, ธนาคารเพื่อการเกษตรและสหกรณ์การเกษตร',
   `bank_name_eng` VARCHAR(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'ชื่อธนาคารภาษาอังกฤษ เช่น Krungthai Bank (KTB)',
@@ -166,14 +173,15 @@ COMMENT='ตารางที่ 6: แม่แบบพิกัดการ�
 
 
 -- ====================================================================================================
--- ข้อมูลเริ่มต้นของระบบ (Initial Seeded Data) - ภาษาไทยสมบูรณ์แบบ
+-- ข้อมูลเริ่มต้นของระบบ (Initial Seeded Data) - ภาษาไทยสมบูรณ์แบบ 100%
 -- ====================================================================================================
 
 -- 1. เพิ่มผู้ใช้งานเริ่มต้น (Admin และ เจ้าหน้าที่การเงิน)
 INSERT INTO `users` (`id`, `username`, `password_hash`, `full_name`, `position`, `role`, `status`)
 VALUES 
 ('user_admin', 'admin', '8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918', 'นายชำนาญ การคลัง', 'หัวหน้ากลุ่มงานการเงินและบัญชี', 'ADMIN', 'ACTIVE'),
-('user_somchai', 'somchai', '03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4', 'นายสมชาย บริการดี', 'นักวิชาการเงินและบัญชีชำนาญการ', 'USER', 'ACTIVE')
+('user_somchai', 'somchai', '03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4', 'นายสมชาย บริการดี', 'นักวิชาการเงินและบัญชีชำนาญการ', 'USER', 'ACTIVE'),
+('user_suda', 'suda', '03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4', 'นางสาวสุดา วงศ์สว่าง', 'เจ้าหน้าที่การเงินและพัสดุ', 'USER', 'ACTIVE')
 ON DUPLICATE KEY UPDATE 
   `full_name` = VALUES(`full_name`),
   `position` = VALUES(`position`);
@@ -187,23 +195,9 @@ VALUES
 ON DUPLICATE KEY UPDATE 
   `bank_name_thai` = VALUES(`bank_name_thai`);
 
--- ----------------------------------------------------------------------------------------------------
--- สคริปต์ปรับปรุงและซ่อมแซมตารางให้เป็น UTF-8 (utf8mb4) สมบูรณ์แบบ และลบสมาชิกทดสอบที่ตกค้าง
--- ----------------------------------------------------------------------------------------------------
-ALTER DATABASE `cheque_system` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-
-ALTER TABLE `users` CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-ALTER TABLE `cheques` CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-ALTER TABLE `cheque_items` CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-ALTER TABLE `bank_templates` CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-ALTER TABLE `cheque_print_logs` CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-ALTER TABLE `audit_logs` CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-
--- ล้างข้อมูลสมาชิกทดสอบที่ถูกลบออกจากระบบ (เช่น 11111, 22222)
-DELETE FROM `users` WHERE `username` IN ('11111', '22222', '112222') OR `id` IN ('11111', '22222');
-
--- ซ่อมแซมชื่อภาษาไทยของผู้ดูแลระบบและเจ้าหน้าที่
-UPDATE `users` SET `full_name` = 'นายชำนาญ การคลัง', `position` = 'หัวหน้ากลุ่มงานการเงินและบัญชี' WHERE `username` = 'admin';
-UPDATE `users` SET `full_name` = 'นายสมชาย บริการดี', `position` = 'นักวิชาการเงินและบัญชีชำนาญการ' WHERE `username` = 'somchai';
-
+-- 3. เปิดการตรวจสอบ Foreign Key กลับคืนมา
 SET FOREIGN_KEY_CHECKS = 1;
+
+-- ====================================================================================================
+-- สิ้นสุดสคริปต์: ฐานข้อมูล cheque_system พร้อมใช้งาน รองรับภาษาไทย UTF-8 (utf8mb4_unicode_ci) 100%
+-- ====================================================================================================
