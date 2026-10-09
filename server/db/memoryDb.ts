@@ -15,7 +15,7 @@ export const INITIAL_USERS: User[] = [
     createdAt: '2026-10-01T08:00:00.000Z',
   },
   {
-    id: 'user_finance_1',
+    id: 'user_somchai',
     username: 'somchai',
     passwordHash: '03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4', // '1234'
     fullName: 'นายสมชาย บริการดี',
@@ -303,7 +303,7 @@ class BackendDatabase {
   }
 
   updateUser(id: string, updates: Partial<User>): boolean {
-    const idx = this.users.findIndex(u => u.id === id);
+    const idx = this.users.findIndex(u => u.id === id || u.username === id || (updates.username && u.username === updates.username));
     if (idx === -1) return false;
     this.users[idx] = { ...this.users[idx], ...updates };
     return true;
@@ -311,7 +311,7 @@ class BackendDatabase {
 
   deleteUser(id: string): boolean {
     const prev = this.users.length;
-    this.users = this.users.filter(u => u.id !== id);
+    this.users = this.users.filter(u => u.id !== id && u.username !== id);
     return this.users.length < prev;
   }
 

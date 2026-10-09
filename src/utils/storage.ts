@@ -660,10 +660,10 @@ export class StorageService {
 
     const target = users[idx];
     if (data.fullName !== undefined && data.fullName.trim()) {
-      target.fullName = fixThaiMojibake(data.fullName.trim(), target.username);
+      target.fullName = data.fullName.trim();
     }
     if (data.position !== undefined) {
-      target.position = fixThaiMojibake(data.position.trim(), target.username);
+      target.position = data.position.trim();
     }
     if (data.role !== undefined) target.role = data.role;
     if (data.status !== undefined) target.status = data.status;

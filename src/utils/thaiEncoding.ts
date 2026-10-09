@@ -16,42 +16,35 @@ export function isThaiMojibake(text: string): boolean {
     text.includes('à¸') ||
     text.includes('à¹') ||
     text.includes('Ã') ||
-    text.includes('เธ™') ||
-    text.includes('เธช') ||
-    text.includes('เธก') ||
-    text.includes('เธฃ') ||
-    /[เธ]{2,}/.test(text)
+    text.includes('เ¹')
   );
 }
 
-// ตารางจับคู่ชื่อและตำแหน่งมาตรฐานเพื่อการกู้คืนที่แม่นยำ 100%
+// ตารางจับคู่ข้อความต่างดาวที่ตรวจพบ (Mojibake เท่านั้น - ห้ามจับคู่คำภาษาไทยปกติ)
 const KNOWN_PHRASE_MAPPINGS: Array<{ match: (t: string) => boolean; result: string }> = [
-  // 1. ผู้ใช้งานหลัก
+  // 1. ผู้ใช้งานหลักเมื่อเป็นต่างดาว
   {
-    match: (t) => t.includes('เธ™เธฒเธขเธŠเธณเธ™เธฒเธ') || t.includes('เธ„เธฅเธฑเธ‡') || t.includes('ชำนาญ') || t.includes('admin'),
+    match: (t) => t.includes('เธ™เธฒเธขเธŠเธณเธ™เธฒเธ') || (t.includes('เธ') && t.includes('เธ„เธฅเธฑเธ‡')),
     result: 'นายชำนาญ การคลัง',
   },
   {
     match: (t) =>
       t.includes('เธ™เธฒเธขเธชเธกเธŠเธฒเธข') ||
-      t.includes('เธšเธฃเธดเธ เธฒเธฃเธ”เธต') ||
+      (t.includes('เธ') && t.includes('เธšเธฃเธดเธ เธฒเธฃเธ”เธต')) ||
       t.includes('ธเธฒเธขเธชเธก') ||
-      t.includes('เธชเธกเธ') ||
-      t.includes('เธฃเธดเธ') ||
-      t.includes('สมชาย') ||
-      t.includes('somchai'),
+      (t.includes('เธ') && t.includes('เธชเธกเธ')),
     result: 'นายสมชาย บริการดี',
   },
   {
-    match: (t) => t.includes('เธชเธธเธ”เธฒ') || t.includes('เธงเธ‡เธจ') || t.includes('สุดา') || t.includes('suda'),
+    match: (t) => t.includes('เธชเธธเธ”เธฒ') || (t.includes('เธ') && t.includes('เธงเธ‡เธจ')),
     result: 'นางสาวสุดา วงศ์สว่าง',
   },
   {
-    match: (t) => t.includes('เธชเธธเธฃเธŠเธฑเธข') || t.includes('เธกเธฑเนˆเธ™') || t.includes('สุรชัย') || t.includes('surachai'),
+    match: (t) => t.includes('เธชเธธเธฃเธŠเธฑเธข') || (t.includes('เธ') && t.includes('เธกเธฑเนˆเธ™')),
     result: 'นายสุรชัย มั่นคง',
   },
 
-  // 2. ตำแหน่งงาน
+  // 2. ตำแหน่งงานเมื่อเป็นต่างดาว
   {
     match: (t) => t.includes('เธซเธฑเธงเธซเธ™เน‰เธฒ') && (t.includes('เธ เธฒเธฃเน€เธ‡เธดเธ™') || t.includes('เธ เธฒเธฃเธ„เธฅเธฑเธ‡')),
     result: 'หัวหน้ากลุ่มงานการเงินและบัญชี',
@@ -141,7 +134,10 @@ function cp874ToByte(char: string): number | null {
 export function fixThaiMojibake(text: string, fallbackUsername?: string): string {
   if (!text || typeof text !== 'string') return text;
 
-  // 1. ตรวจสอบ fallback username
+  // หากเป็นข้อความปกติที่ไม่ใช่ภาษาต่างดาว ให้คืนค่าข้อความจริงทันที ห้ามแตะต้องเด็ดขาด
+  if (!isThaiMojibake(text)) return text;
+
+  // 1. ตรวจสอบ fallback username เฉพาะเมื่อข้อความเป็นภาษาต่างดาวเท่านั้น
   if (fallbackUsername) {
     const cleanUser = fallbackUsername.toLowerCase().trim();
     if (cleanUser === 'admin') return 'นายชำนาญ การคลัง';
@@ -149,8 +145,6 @@ export function fixThaiMojibake(text: string, fallbackUsername?: string): string
     if (cleanUser === 'suda') return 'นางสาวสุดา วงศ์สว่าง';
     if (cleanUser === 'surachai') return 'นายสุรชัย มั่นคง';
   }
-
-  if (!isThaiMojibake(text)) return text;
 
   // 2. จับคู่กับคำมาตรฐานที่พบบ่อย
   for (const item of KNOWN_PHRASE_MAPPINGS) {

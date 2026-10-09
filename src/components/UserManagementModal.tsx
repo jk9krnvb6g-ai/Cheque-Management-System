@@ -322,8 +322,8 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
   // Open Edit User Modal
   const handleOpenEditModal = (targetUser: User) => {
     setEditingUser(targetUser);
-    setEditFullName(fixThaiMojibake(targetUser.fullName, targetUser.username));
-    setEditPosition(fixThaiMojibake(targetUser.position || '', targetUser.username));
+    setEditFullName(targetUser.fullName);
+    setEditPosition(targetUser.position || '');
     setEditRole(targetUser.role);
     setEditStatus(targetUser.status);
     setEditNewPassword('');
@@ -376,6 +376,15 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
         },
         currentUser
       );
+
+      // 3. อัปเดตรายการบนหน้าจอทันที
+      setUsers(prev => prev.map(u => (u.id === editingUser.id || u.username === editingUser.username) ? {
+        ...u,
+        fullName: editFullName.trim(),
+        position: editPosition.trim(),
+        role: editRole,
+        status: editStatus,
+      } : u));
 
       if (!res.success) {
         setErrorMsg(res.error || 'การแก้ไขข้อมูลล้มเหลว');

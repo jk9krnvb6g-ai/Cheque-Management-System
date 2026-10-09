@@ -619,8 +619,9 @@ export const mysqlUsers = {
     };
 
     let mysqlError: string | null = null;
+    let inMysql = false;
     try {
-      if (pool) {
+      if (isMysqlConnected && pool) {
         await withConnection(async (conn) => {
           await conn.query(
             `INSERT INTO users (id, username, password_hash, full_name, position, role, status, created_at)
@@ -643,17 +644,15 @@ export const mysqlUsers = {
             ]
           );
         });
-        isMysqlConnected = true;
+        inMysql = true;
       }
       fallbackDb.addUser(cleanUser);
       return cleanUser;
     } catch (err: any) {
+      isMysqlConnected = false;
       mysqlError = err?.message || String(err);
       console.warn('[MySQL Save User Warning]', mysqlError);
       fallbackDb.addUser(cleanUser);
-      if (isMysqlConnected && mysqlError) {
-        throw new Error(`บันทึกลง MySQL ไม่สำเร็จ: ${mysqlError}`);
-      }
       return cleanUser;
     }
   },
@@ -661,16 +660,16 @@ export const mysqlUsers = {
   async update(id: string, updates: Partial<User>): Promise<boolean> {
     const cleanUpdates: Partial<User> = { ...updates };
     if (cleanUpdates.fullName !== undefined) {
-      cleanUpdates.fullName = hasThaiMojibake(cleanUpdates.fullName) ? cleanThaiMojibake(cleanUpdates.fullName, id) : cleanUpdates.fullName.trim();
+      cleanUpdates.fullName = cleanUpdates.fullName.trim();
     }
     if (cleanUpdates.position !== undefined) {
-      cleanUpdates.position = hasThaiMojibake(cleanUpdates.position) ? cleanThaiMojibake(cleanUpdates.position, id) : cleanUpdates.position.trim();
+      cleanUpdates.position = cleanUpdates.position.trim();
     }
 
     let mysqlError: string | null = null;
     let inMysql = false;
     try {
-      if (pool) {
+      if (isMysqlConnected && pool) {
         await withConnection(async (conn) => {
           const fields: string[] = [];
           const values: any[] = [];
@@ -697,20 +696,25 @@ export const mysqlUsers = {
           }
 
           if (fields.length) {
-            values.push(id, id);
-            await conn.query(`UPDATE users SET ${fields.join(', ')} WHERE id = ? OR username = ?`, values);
+            const targets = Array.from(new Set([id, updates.username, updates.id].filter(Boolean))) as string[];
+            const whereClauses = targets.map(() => 'id = ? OR username = ?').join(' OR ');
+            const whereParams: string[] = [];
+            targets.forEach(t => whereParams.push(t, t));
+            await conn.query(`UPDATE users SET ${fields.join(', ')} WHERE ${whereClauses}`, [...values, ...whereParams]);
           }
         });
-        isMysqlConnected = true;
         inMysql = true;
       }
       fallbackDb.updateUser(id, cleanUpdates);
+      if (updates.username) fallbackDb.updateUser(updates.username, cleanUpdates);
       return inMysql;
     } catch (err: any) {
+      isMysqlConnected = false;
       mysqlError = err?.message || String(err);
       console.warn('[MySQL Update User Warning]', mysqlError);
       fallbackDb.updateUser(id, cleanUpdates);
-      throw new Error(`แก้ไขใน MySQL ไม่สำเร็จ: ${mysqlError}`);
+      if (updates.username) fallbackDb.updateUser(updates.username, cleanUpdates);
+      return false;
     }
   },
 
@@ -719,19 +723,19 @@ export const mysqlUsers = {
     let mysqlError: string | null = null;
     let inMysql = false;
     try {
-      if (pool) {
+      if (isMysqlConnected && pool) {
         await withConnection(async (conn) => {
           for (const t of targets) {
             await conn.query('DELETE FROM users WHERE id = ? OR username = ?', [t, t]);
           }
         });
-        isMysqlConnected = true;
         inMysql = true;
       }
       fallbackDb.deleteUser(id);
       if (username) fallbackDb.deleteUser(username);
       return { success: true, inMysql };
     } catch (err: any) {
+      isMysqlConnected = false;
       mysqlError = err?.message || String(err);
       console.error('[MySQL Delete User Error]', mysqlError);
       fallbackDb.deleteUser(id);

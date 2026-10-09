@@ -135,8 +135,7 @@ userRouter.put('/:id', async (req: Request, res: Response) => {
       passwordHash: password ? sha256(password) : existing.passwordHash,
     };
 
-    await mysqlUsers.save(updatedUser);
-    await mysqlUsers.update(existing.id, updatedUser);
+    const inMysql = await mysqlUsers.update(existing.id, updatedUser);
 
     if (operator) {
       await mysqlAuditLogs.add({
