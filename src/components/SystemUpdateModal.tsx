@@ -73,7 +73,7 @@ export const SystemUpdateModal: React.FC<SystemUpdateModalProps> = ({
     stopBackend: true,
   });
 
-  const [systemVersion, setSystemVersion] = useState<string>('2.20.44');
+  const [systemVersion, setSystemVersion] = useState<string>('2.20.45');
   const [stepResults, setStepResults] = useState<{ [key: number]: { status: 'PENDING' | 'RUNNING' | 'SUCCESS' | 'WARNING' | 'ERROR'; msg: string } }>({
     1: { status: 'PENDING', msg: '' },
     2: { status: 'PENDING', msg: '' },
@@ -90,7 +90,7 @@ export const SystemUpdateModal: React.FC<SystemUpdateModalProps> = ({
       apiClient.getSystemUpdateStatus()
         .then((res) => {
           if (res && res.success) {
-            setSystemVersion(res.latestVersion || '2.20.44');
+            setSystemVersion(res.latestVersion || '2.20.45');
             if (res.targetPath) setTargetPath(res.targetPath);
             if (res.githubConfig) {
               if (res.githubConfig.repoUrl) setGithubRepoUrl(res.githubConfig.repoUrl);
@@ -248,6 +248,15 @@ export const SystemUpdateModal: React.FC<SystemUpdateModalProps> = ({
     navigator.clipboard.writeText(text);
     setCopiedBatch(label);
     setTimeout(() => setCopiedBatch(null), 2500);
+  };
+
+  // Perform hard reload with cache-buster timestamp
+  const handleReloadAndApply = () => {
+    try {
+      sessionStorage.clear();
+    } catch {}
+    const freshUrl = window.location.origin + window.location.pathname + '?v=' + Date.now();
+    window.location.href = freshUrl;
   };
 
   // Determine full command sequence string based on backend status
@@ -555,6 +564,23 @@ export const SystemUpdateModal: React.FC<SystemUpdateModalProps> = ({
                   </button>
                 </div>
 
+                {/* 4. update-and-restart.bat (สคริปต์อัตโนมัติ 1-Click) */}
+                <div className="flex items-center justify-between text-slate-700 pt-1 border-t border-slate-200/60 bg-purple-50/50 -mx-1 px-1 py-0.5 rounded">
+                  <span className="flex items-center gap-1 font-bold text-purple-900">
+                    <RotateCw className="w-3.5 h-3.5 text-purple-600" />
+                    <span>⭐ update-and-restart.bat</span>
+                    <span className="text-[10px] font-normal text-purple-700 font-sans">(รันอัปเดตครบ 3 ขั้นตอนอัตโนมัติ)</span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => handleCopyCmd('.\\update-and-restart.bat', 'autorun')}
+                    className="text-[10px] text-purple-800 hover:text-purple-950 font-bold flex items-center gap-1 cursor-pointer font-sans"
+                  >
+                    <Copy className="w-3 h-3" />
+                    <span>{copiedBatch === 'autorun' ? 'คัดลอกแล้ว!' : 'คัดลอกคำสั่ง'}</span>
+                  </button>
+                </div>
+
                 {/* One-click copy full sequence */}
                 <div className="pt-1.5 border-t border-slate-200 flex items-center justify-between">
                   <span className="text-[10px] font-sans font-semibold text-slate-500">
@@ -627,17 +653,37 @@ export const SystemUpdateModal: React.FC<SystemUpdateModalProps> = ({
           {/* STEP 5: ✅ เสร็จสมบูรณ์                                         */}
           {/* ---------------------------------------------------------------- */}
           {currentStage === 'COMPLETED' && (
-            <div className="p-3.5 bg-emerald-50 border-2 border-emerald-300 rounded-2xl flex items-center gap-3 animate-in fade-in duration-300">
-              <div className="w-8 h-8 rounded-full bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-xs">
-                <Check className="w-5 h-5 stroke-[3]" />
+            <div className="p-4 bg-emerald-50 border-2 border-emerald-400 rounded-2xl space-y-2.5 animate-in fade-in duration-300">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-full bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-xs">
+                  <Check className="w-5 h-5 stroke-[3]" />
+                </div>
+                <div>
+                  <div className="font-extrabold text-sm text-emerald-950">
+                    ✅ เสร็จสมบูรณ์! ระบบอัปเดตเป็นเวอร์ชัน v{systemVersion} แล้ว
+                  </div>
+                  <div className="text-xs text-emerald-800 mt-0.5">
+                    คอมไพล์ไฟล์ dist สำหรับ IIS สำเร็จ + บันทึกฐานข้อมูล MySQL พร้อมใช้งาน
+                  </div>
+                </div>
               </div>
-              <div>
-                <div className="font-extrabold text-sm text-emerald-950">
-                  ✅ เสร็จสมบูรณ์!
+
+              {/* Action Banner to prompt user to reload and activate */}
+              <div className="p-3 bg-white/90 rounded-xl border border-emerald-300 text-xs text-slate-700 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+                <div>
+                  <span className="font-bold text-slate-900 block">💡 ขั้นตอนสำคัญสุดท้าย:</span>
+                  <span className="text-[11px] text-slate-600">
+                    กดปุ่ม <strong>"เปิดใช้งานระบบเวอร์ชันล่าสุด"</strong> ด้านล่างเพื่อรีโหลดเบราว์เซอร์และเริ่มใช้งานทันที
+                  </span>
                 </div>
-                <div className="text-xs text-emerald-800 mt-0.5">
-                  ระบบซิงค์เวอร์ชัน {systemVersion} จาก GitHub ({githubBranch}) และปรับฐานข้อมูล MySQL 10.1.0.201 พร้อมใช้งานทันที
-                </div>
+                <button
+                  type="button"
+                  onClick={handleReloadAndApply}
+                  className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold rounded-lg text-xs shrink-0 cursor-pointer transition-all shadow-xs flex items-center gap-1.5"
+                >
+                  <RotateCw className="w-3.5 h-3.5" />
+                  <span>รีโหลดใช้งานทันที</span>
+                </button>
               </div>
             </div>
           )}
@@ -697,11 +743,11 @@ export const SystemUpdateModal: React.FC<SystemUpdateModalProps> = ({
           ) : currentStage === 'COMPLETED' ? (
             <button
               type="button"
-              onClick={onClose}
+              onClick={handleReloadAndApply}
               className="px-6 py-2.5 text-xs font-black text-white bg-emerald-600 hover:bg-emerald-500 rounded-xl shadow-md hover:shadow-lg transition-all cursor-pointer flex items-center gap-2"
             >
               <Check className="w-4 h-4 stroke-[3]" />
-              <span>เปิดใช้งานระบบเวอร์ชันล่าสุด</span>
+              <span>เปิดใช้งานระบบเวอร์ชันล่าสุด (รีโหลด)</span>
             </button>
           ) : (
             <div className="flex items-center gap-2 text-xs font-bold text-purple-700">

@@ -4,6 +4,15 @@
 
 ---
 
+## 🚀 เวอร์ชัน 2.20.45 (ตุลาคม 2569 — ซิงค์อัปเดต GitHub & ป้ายเวอร์ชันบนเมนูบาร์)
+- **ปรับปรุงป้ายเวอร์ชันบนเมนูบาร์ (Navbar)**: แสดง `KTB • BAAC • GSB • v2.20.45` อย่างชัดเจนและสวยงาม
+- **ระบบตั้งค่า GitHub ในหน้าต่างอัปเดต**: รองรับการเปลี่ยนคลัง Repository URL, สาขา (Branch/Tag), Token และ Quick Presets
+- **ระบบตรวจสอบสถานะ Backend อัตโนมัติ (Step 2)**:
+  - หาก Backend ทำงานอยู่: รันลำดับ `stop-backend.bat` ➔ `build-iis.bat` ➔ `start-backend.bat`
+  - หาก Backend ไม่ได้ทำงานอยู่: รันลำดับ `build-iis.bat` ➔ `start-backend.bat`
+
+---
+
 ## 🚀 เวอร์ชัน 2.5.0 (ตุลาคม 2569 — ดีไซน์พรีเมียม & Live Cheque Preview)
 
 ### 1. เพิ่มตัวอย่างเช็คเสมือนจริงแบบเรียลไทม์ (Live Realistic Cheque Preview)

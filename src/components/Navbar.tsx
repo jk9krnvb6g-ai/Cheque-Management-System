@@ -91,7 +91,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               <span>KTB • BAAC • GSB</span>
               <span className="text-red-300/80">•</span>
               <span className="inline-flex items-center px-1.5 py-0.2 rounded bg-white/20 text-white font-black text-[10px] tracking-wider border border-white/25 shadow-xs">
-                v2.20.44
+                v2.20.45
               </span>
             </div>
           </button>
