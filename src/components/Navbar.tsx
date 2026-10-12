@@ -87,9 +87,13 @@ export const Navbar: React.FC<NavbarProps> = ({
             <span className="text-lg sm:text-xl font-black tracking-tight text-white group-hover:text-red-100 transition-colors whitespace-nowrap block">
               ระบบจัดทำและพิมพ์เช็ค
             </span>
-            <span className="text-xs text-red-200 font-medium hidden sm:block">
-              KTB • BAAC • GSB
-            </span>
+            <div className="text-[10px] sm:text-xs text-red-200 font-medium flex items-center gap-1.5 mt-0.5">
+              <span>KTB • BAAC • GSB</span>
+              <span className="text-red-300/80">•</span>
+              <span className="inline-flex items-center px-1.5 py-0.2 rounded bg-white/20 text-white font-black text-[10px] tracking-wider border border-white/25 shadow-xs">
+                v2.20.44
+              </span>
+            </div>
           </button>
         </div>
 

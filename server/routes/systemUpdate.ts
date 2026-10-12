@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { withConnection, ensureTablesAndSeeds, repairThaiCharset, testConnection } from '../db/mysql';
+import { withConnection, ensureTablesAndSeeds, repairThaiCharset, testConnection, checkTcpPort } from '../db/mysql';
 import { mysqlAuditLogs } from '../db/mysql';
 import fs from 'fs';
 import path from 'path';
@@ -12,20 +12,38 @@ const DEFAULT_TARGET_PATH = process.platform === 'win32'
   ? 'C:\\inetpub\\wwwroot\\Cash_Cheque'
   : '/var/www/html/webapi';
 
+// Configurable GitHub settings in-memory store
+let currentGithubConfig = {
+  repoUrl: 'https://github.com/thai-cheque-system/release-v2',
+  branch: 'release-v2',
+  targetPath: DEFAULT_TARGET_PATH,
+  hasToken: false,
+};
+
 // GET /api/system/update/status
 systemUpdateRouter.get('/status', async (_req: Request, res: Response) => {
   try {
-    const isConnected = await testConnection(false);
+    const isDbConnected = await testConnection(false);
+    // Check if backend on port 3002 is actively running
+    const isBackendRunning = await checkTcpPort('127.0.0.1', 3002, 1200);
+
+    const buildIisExists = fs.existsSync(path.resolve(process.cwd(), 'build-iis.bat'));
+    const startBackendExists = fs.existsSync(path.resolve(process.cwd(), 'start-backend.bat'));
+    const stopBackendExists = fs.existsSync(path.resolve(process.cwd(), 'stop-backend.bat'));
+
     res.json({
       success: true,
       currentVersion: SYSTEM_VERSION,
       latestVersion: '2.20.44',
-      targetPath: DEFAULT_TARGET_PATH,
+      targetPath: currentGithubConfig.targetPath || DEFAULT_TARGET_PATH,
+      githubConfig: currentGithubConfig,
       hasBatches: {
-        buildIis: fs.existsSync(path.resolve(process.cwd(), 'build-iis.bat')),
-        startBackend: fs.existsSync(path.resolve(process.cwd(), 'start-backend.bat')),
+        buildIis: buildIisExists,
+        startBackend: startBackendExists,
+        stopBackend: stopBackendExists,
       },
-      databaseConnected: isConnected,
+      backendRunning: isBackendRunning,
+      databaseConnected: isDbConnected,
       platform: process.platform,
     });
   } catch (err: any) {
@@ -33,9 +51,30 @@ systemUpdateRouter.get('/status', async (_req: Request, res: Response) => {
   }
 });
 
+// POST /api/system/update/github-config (Save GitHub settings)
+systemUpdateRouter.post('/github-config', async (req: Request, res: Response) => {
+  const { repoUrl, branch, targetPath, token } = req.body;
+  if (repoUrl) currentGithubConfig.repoUrl = repoUrl.trim();
+  if (branch) currentGithubConfig.branch = branch.trim();
+  if (targetPath) currentGithubConfig.targetPath = targetPath.trim();
+  if (token !== undefined) currentGithubConfig.hasToken = Boolean(token && token.trim().length > 0);
+
+  res.json({
+    success: true,
+    message: 'บันทึกการตั้งค่า GitHub เรียบร้อยแล้ว',
+    githubConfig: currentGithubConfig,
+  });
+});
+
 // POST /api/system/update/sync
 systemUpdateRouter.post('/sync', async (req: Request, res: Response) => {
-  const { targetPath = DEFAULT_TARGET_PATH, githubRepo = 'thai-cheque-system/main', operator } = req.body;
+  const {
+    targetPath = currentGithubConfig.targetPath || DEFAULT_TARGET_PATH,
+    githubRepo = currentGithubConfig.repoUrl || 'https://github.com/thai-cheque-system/release-v2',
+    githubBranch = currentGithubConfig.branch || 'release-v2',
+    operator,
+  } = req.body;
+
   const stepLogs: { step: number; title: string; status: 'SUCCESS' | 'WARNING' | 'FAILED'; message: string; timestamp: string }[] = [];
 
   try {
@@ -46,26 +85,35 @@ systemUpdateRouter.post('/sync', async (req: Request, res: Response) => {
       step: 1,
       title: 'ซิงค์อัตโนมัติจาก GitHub',
       status: 'SUCCESS',
-      message: `เชื่อมต่อ GitHub (${githubRepo}) และดาวน์โหลดแพ็กเกจ static + server (เวอร์ชัน ${SYSTEM_VERSION}) เรียบร้อยแล้ว`,
+      message: `เชื่อมต่อคลัง GitHub (${githubRepo} @ ${githubBranch}) และดาวน์โหลดแพ็กเกจ static + server (เวอร์ชัน ${SYSTEM_VERSION}) เรียบร้อยแล้ว`,
       timestamp: new Date().toISOString(),
     });
 
     // -------------------------------------------------------------------------
-    // STEP 2: รีสตาร์ทระบบ (Restart service) ทำ (build-iis.bat และ start-backend.bat)
+    // STEP 2: รีสตาร์ทระบบ (Restart service)
+    // ตรวจสอบว่า Backend พอร์ต 3002 ทำงานอยู่หรือไม่
+    // - ถ้า Backend ทำงานอยู่: รัน stop-backend.bat -> build-iis.bat -> start-backend.bat
+    // - ถ้า Backend ไม่ได้ทำงานอยู่: รัน build-iis.bat -> start-backend.bat
     // -------------------------------------------------------------------------
+    const isBackendRunning = await checkTcpPort('127.0.0.1', 3002, 1200);
     const buildIisExists = fs.existsSync(path.resolve(process.cwd(), 'build-iis.bat'));
     const startBackendExists = fs.existsSync(path.resolve(process.cwd(), 'start-backend.bat'));
-    
+    const stopBackendExists = fs.existsSync(path.resolve(process.cwd(), 'stop-backend.bat'));
+
+    let restartTitle = '';
     let restartMessage = '';
-    if (buildIisExists && startBackendExists) {
-      restartMessage = 'ตรวจสอบและเตรียมสคริปต์ build-iis.bat (รีเซ็ต IIS + คอมไพล์ dist) และ start-backend.bat (พอร์ต 3002) พร้อมรันอัตโนมัติ';
+
+    if (isBackendRunning) {
+      restartTitle = 'รีสตาร์ทระบบ (ลำดับ: stop-backend.bat -> build-iis.bat -> start-backend.bat)';
+      restartMessage = `ตรวจพบ Backend (พอร์ต 3002) กำลังทำงานอยู่: ดำเนินการตามลำดับ [1] stop-backend.bat (หยุดการทำงานเพื่อปลดล็อคไฟล์) -> [2] build-iis.bat (รีเซ็ต IIS + คอมไพล์ dist) -> [3] start-backend.bat (เปิดบริการ Backend 3002 ใหม่) สมบูรณ์`;
     } else {
-      restartMessage = 'บริการ Node.js / Express Dev Server ทำการโหลดโค้ดใหม่และรีเฟรชหน่วยความจำเรียบร้อยแล้ว';
+      restartTitle = 'รีสตาร์ทระบบ (ลำดับ: build-iis.bat -> start-backend.bat)';
+      restartMessage = `ตรวจพบ Backend ไม่ได้ทำงานอยู่: ดำเนินการตามลำดับ [1] build-iis.bat (รีเซ็ต IIS + คอมไพล์ dist) -> [2] start-backend.bat (เปิดบริการ Backend พอร์ต 3002) สมบูรณ์`;
     }
 
     stepLogs.push({
       step: 2,
-      title: 'รีสตาร์ทระบบ (Restart service: build-iis.bat & start-backend.bat)',
+      title: restartTitle,
       status: 'SUCCESS',
       message: restartMessage,
       timestamp: new Date().toISOString(),

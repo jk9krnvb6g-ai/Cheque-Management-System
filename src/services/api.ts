@@ -373,16 +373,36 @@ export const apiClient = {
     currentVersion: string;
     latestVersion: string;
     targetPath: string;
-    hasBatches: { buildIis: boolean; startBackend: boolean };
+    githubConfig?: {
+      repoUrl: string;
+      branch: string;
+      targetPath: string;
+      hasToken: boolean;
+    };
+    hasBatches: { buildIis: boolean; startBackend: boolean; stopBackend?: boolean };
+    backendRunning?: boolean;
     databaseConnected: boolean;
     platform: string;
   }> {
     return await request('/system/update/status');
   },
 
+  async saveGithubConfig(payload: {
+    repoUrl?: string;
+    branch?: string;
+    targetPath?: string;
+    token?: string;
+  }): Promise<{ success: boolean; message: string; githubConfig?: any }> {
+    return await request('/system/update/github-config', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
   async triggerSystemUpdate(payload: {
     targetPath?: string;
     githubRepo?: string;
+    githubBranch?: string;
     operator?: User;
   }): Promise<{
     success: boolean;
