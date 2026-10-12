@@ -4,6 +4,7 @@ import { chequeRouter } from './server/routes/cheques';
 import { templateRouter } from './server/routes/templates';
 import { userRouter } from './server/routes/users';
 import { logRouter } from './server/routes/logs';
+import { systemUpdateRouter } from './server/routes/systemUpdate';
 import { testConnection, getDbStatus, bulkPushToMysql, updateDbConfig, repairThaiCharset, DB_CONFIG } from './server/db/mysql';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -132,6 +133,10 @@ async function startServer() {
   app.use('/api/logs', logRouter);
   app.use('/Cash_Cheque/api/logs', logRouter);
   app.use('/api/Cash_Cheque/logs', logRouter);
+
+  app.use('/api/system/update', systemUpdateRouter);
+  app.use('/Cash_Cheque/api/system/update', systemUpdateRouter);
+  app.use('/api/Cash_Cheque/system/update', systemUpdateRouter);
 
   // Frontend integration
   if (!isProd) {

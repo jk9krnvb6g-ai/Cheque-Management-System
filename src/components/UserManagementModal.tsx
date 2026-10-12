@@ -88,8 +88,8 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
 
       const remoteUsers = await apiClient.getUsers();
       if (remoteUsers && Array.isArray(remoteUsers) && remoteUsers.length > 0) {
-        await StorageService.saveUsersFromBackend(remoteUsers);
-        setUsers(remoteUsers);
+        StorageService.saveUsersFromBackend(remoteUsers);
+        setUsers(StorageService.getUsers());
       }
     } catch {
       setDbLiveConnected(false);

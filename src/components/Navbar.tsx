@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { User } from '../types';
-import { LogOut, UserCheck, Users, Type, Check, Database } from 'lucide-react';
+import { LogOut, UserCheck, Users, Type, Check, Database, Upload } from 'lucide-react';
 
 export type AppTab = 'write' | 'executive' | 'history' | 'templates';
 
@@ -14,6 +14,7 @@ interface NavbarProps {
   userCount?: number;
   dbConnected?: boolean | null;
   onOpenDbStatus?: () => void;
+  onOpenSystemUpdate?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -26,6 +27,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   userCount = 0,
   dbConnected = null,
   onOpenDbStatus,
+  onOpenSystemUpdate,
 }) => {
   // Font switcher state
   const [currentFont, setCurrentFont] = useState<string>(() => {
@@ -243,6 +245,19 @@ export const Navbar: React.FC<NavbarProps> = ({
                   {userCount}
                 </span>
               )}
+            </button>
+          )}
+
+          {/* System Auto-Update & GitHub Sync Button (Admin Only) */}
+          {isAdmin && onOpenSystemUpdate && (
+            <button
+              type="button"
+              onClick={onOpenSystemUpdate}
+              title="ซิงค์อัตโนมัติจาก GitHub (static + server, build-iis.bat, start-backend.bat, ปรับโครงสร้างฐานข้อมูล, อัปเดตสิทธิ์)"
+              className="flex items-center gap-1.5 px-3 py-2 text-xs sm:text-sm font-black text-white bg-gradient-to-r from-purple-700 to-fuchsia-700 hover:from-purple-600 hover:to-fuchsia-600 border border-purple-400/50 rounded-xl transition-all cursor-pointer shadow-md hover:shadow-lg"
+            >
+              <Upload className="w-4 h-4 text-purple-200" />
+              <span className="hidden lg:inline">🚀 อัปเดตระบบ</span>
             </button>
           )}
 

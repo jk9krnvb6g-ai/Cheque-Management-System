@@ -10,6 +10,7 @@ import { ChequePrintModal } from './components/ChequePrintModal';
 import { LoginModal } from './components/LoginModal';
 import { UserManagementModal } from './components/UserManagementModal';
 import { DbStatusModal } from './components/DbStatusModal';
+import { SystemUpdateModal } from './components/SystemUpdateModal';
 import { apiClient } from './services/api';
 import { CheckCircle2 } from 'lucide-react';
 
@@ -22,6 +23,7 @@ export default function App() {
   const [usersCount, setUsersCount] = useState<number>(() => StorageService.getUsers().length);
   const [dbConnected, setDbConnected] = useState<boolean | null>(null);
   const [isDbStatusOpen, setIsDbStatusOpen] = useState(false);
+  const [isSystemUpdateOpen, setIsSystemUpdateOpen] = useState(false);
 
   // Navigation props between tabs
   const [selectedBankForTemplates, setSelectedBankForTemplates] = useState<BankType>('KTB');
@@ -150,12 +152,13 @@ export default function App() {
         if (isPrintModalOpen) setIsPrintModalOpen(false);
         if (isUserManagementOpen) setIsUserManagementOpen(false);
         if (isDbStatusOpen) setIsDbStatusOpen(false);
+        if (isSystemUpdateOpen) setIsSystemUpdateOpen(false);
       }
     };
 
     window.addEventListener('keydown', handleGlobalKeyDown);
     return () => window.removeEventListener('keydown', handleGlobalKeyDown);
-  }, [isPrintModalOpen, isUserManagementOpen, isDbStatusOpen]);
+  }, [isPrintModalOpen, isUserManagementOpen, isDbStatusOpen, isSystemUpdateOpen]);
 
   // If not logged in, show login page
   if (!currentUser) {
@@ -180,6 +183,9 @@ export default function App() {
         pendingCount={pendingCount}
         onOpenUserManagement={() => {
           if (isAdmin) setIsUserManagementOpen(true);
+        }}
+        onOpenSystemUpdate={() => {
+          if (isAdmin) setIsSystemUpdateOpen(true);
         }}
         userCount={usersCount}
         dbConnected={dbConnected}
@@ -242,6 +248,9 @@ export default function App() {
             onOpenUserManagement={() => {
               if (isAdmin) setIsUserManagementOpen(true);
             }}
+            onOpenSystemUpdate={() => {
+              if (isAdmin) setIsSystemUpdateOpen(true);
+            }}
           />
         )}
       </main>
@@ -282,6 +291,16 @@ export default function App() {
         onClose={() => setIsDbStatusOpen(false)}
         onDataSynced={refreshData}
       />
+
+      {/* System Auto-Update & GitHub Sync Modal (Admin Only) */}
+      {isAdmin && (
+        <SystemUpdateModal
+          isOpen={isSystemUpdateOpen}
+          onClose={() => setIsSystemUpdateOpen(false)}
+          currentUser={currentUser}
+          onRefreshData={refreshData}
+        />
+      )}
 
       {/* Clean Red & White Footer */}
       <footer className="no-print border-t border-red-100 bg-white py-3.5 text-center text-xs text-slate-500 font-medium w-full">

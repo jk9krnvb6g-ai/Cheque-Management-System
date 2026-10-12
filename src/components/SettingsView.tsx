@@ -5,6 +5,7 @@ import { InteractiveChequeCanvas, EditableFieldKey } from './InteractiveChequeCa
 import { AddTemplateModal } from './AddTemplateModal';
 import { ActualSizeChequeModal } from './ActualSizeChequeModal';
 import { PrinterFeedGuide, FEED_DIRECTION_LABELS } from './PrinterFeedGuide';
+import { GitHubChequeTemplateModal } from './GitHubChequeTemplateModal';
 import {
   Sliders,
   Check,
@@ -19,6 +20,7 @@ import {
   Eye,
   Users,
   Type,
+  Github,
 } from 'lucide-react';
 
 interface SettingsViewProps {
@@ -27,6 +29,7 @@ interface SettingsViewProps {
   initialBank?: BankType;
   onNavigateToWrite?: () => void;
   onOpenUserManagement?: () => void;
+  onOpenSystemUpdate?: () => void;
 }
 
 export const SettingsView: React.FC<SettingsViewProps> = ({
@@ -35,6 +38,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   initialBank,
   onNavigateToWrite,
   onOpenUserManagement,
+  onOpenSystemUpdate,
 }) => {
   // Templates state
   const [templates, setTemplates] = useState<Record<BankType, BankTemplateConfig>>(StorageService.getTemplates());
@@ -52,6 +56,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [selectedField, setSelectedField] = useState<EditableFieldKey | null>('payee');
   const [isCreateTemplateOpen, setIsCreateTemplateOpen] = useState(false);
   const [isActualSizeOpen, setIsActualSizeOpen] = useState(false);
+  const [isGitHubModalOpen, setIsGitHubModalOpen] = useState(false);
 
   // In-app confirmation modal state (No window.confirm)
   const [confirmAction, setConfirmAction] = useState<{
@@ -62,6 +67,22 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
   // Bank template editing
   const currentBankConfig = templates[selectedBank] || Object.values(templates)[0];
+
+  // Apply custom template image from GitHub (covers both real cheque and A4 test calibration)
+  const handleApplyGitHubImage = (imageUrl: string, mode: 'CHEQUE_REAL' | 'A4_TEST') => {
+    const updated: BankTemplateConfig = {
+      ...currentBankConfig,
+      customBgImageUrl: imageUrl,
+    };
+    StorageService.saveTemplate(updated, currentUser);
+    setTemplates((prev) => ({
+      ...prev,
+      [selectedBank]: updated,
+    }));
+    setSaveSuccessMsg(`🌐 ติดตั้งแบบรูปจาก GitHub ให้แก่ "${currentBankConfig.bankNameThai}" สำเร็จแล้ว! (${mode === 'A4_TEST' ? 'โหมดแผ่นทดสอบ A4' : 'โหมดพิมพ์เช็คจริง'})`);
+    setTimeout(() => setSaveSuccessMsg(null), 3500);
+    onRefreshData();
+  };
 
   // Upload custom scanned cheque photo as background
   const handleUploadChequeImage = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -391,6 +412,18 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5">
+          {currentUser.role === 'ADMIN' && onOpenSystemUpdate && (
+            <button
+              type="button"
+              onClick={onOpenSystemUpdate}
+              className="h-11 px-4 bg-gradient-to-r from-purple-700 to-fuchsia-700 hover:from-purple-600 hover:to-fuchsia-600 text-white rounded-xl text-sm font-black shadow-md hover:shadow-lg transition-all flex items-center gap-2 cursor-pointer"
+              title="ซิงค์อัตโนมัติจาก GitHub (static + server, build-iis.bat, start-backend.bat, ปรับโครงสร้างฐานข้อมูล, อัปเดตสิทธิ์)"
+            >
+              <Upload className="w-4 h-4 text-purple-200" />
+              <span>🚀 ซิงค์และอัปเดตระบบจาก GitHub</span>
+            </button>
+          )}
+
           {onOpenUserManagement && (
             <button
               type="button"
@@ -527,6 +560,17 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           </div>
 
           <div className="flex items-center gap-2">
+            {/* Load from GitHub Button */}
+            <button
+              type="button"
+              onClick={() => setIsGitHubModalOpen(true)}
+              className="px-3.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer flex items-center gap-1.5"
+              title="โหลดรูปภาพแม่แบบเช็คจากคลัง GitHub (รองรับทั้งแบบเช็คจริง และแผ่นทดสอบ A4)"
+            >
+              <Github className="w-4 h-4 text-emerald-400" />
+              <span>🌐 โหลดแบบรูปจาก GitHub</span>
+            </button>
+
             {/* Upload Scanned Cheque Image Button */}
             <label
               className="px-3.5 py-1.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer flex items-center gap-1.5"
@@ -1123,9 +1167,19 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             </p>
 
             <div className="pt-1 flex flex-col gap-2">
+              <button
+                type="button"
+                onClick={() => setIsGitHubModalOpen(true)}
+                className="w-full py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-bold transition-all shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                title="เลือกรูปภาพแม่แบบเช็คสำเร็จรูปจาก GitHub Repository"
+              >
+                <Github className="w-3.5 h-3.5 text-emerald-400" />
+                <span>🌐 โหลดแบบรูปจาก GitHub (แม่แบบเช็คจริง & แผ่นทดสอบ A4)</span>
+              </button>
+
               <label className="w-full py-2 bg-red-700 hover:bg-red-800 text-white rounded-lg text-xs font-bold transition-all shadow-xs flex items-center justify-center gap-1.5 cursor-pointer">
                 <Upload className="w-3.5 h-3.5" />
-                <span>{currentBankConfig.customBgImageUrl ? 'เปลี่ยนรูปภาพเช็คจริง' : 'อัปโหลดภาพเช็คจริง'}</span>
+                <span>{currentBankConfig.customBgImageUrl ? 'เปลี่ยนรูปภาพจากเครื่อง' : 'อัปโหลดภาพจากเครื่อง (PNG/JPG)'}</span>
                 <input
                   type="file"
                   accept="image/png,image/jpeg,image/webp"
@@ -1332,6 +1386,18 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             </div>
           </div>
         </div>
+      )}
+
+      {/* GitHub Cheque Template Loader Modal */}
+      {isGitHubModalOpen && (
+        <GitHubChequeTemplateModal
+          isOpen={isGitHubModalOpen}
+          onClose={() => setIsGitHubModalOpen(false)}
+          selectedBank={selectedBank}
+          currentTemplate={currentBankConfig}
+          currentUser={currentUser}
+          onApplyTemplateImage={handleApplyGitHubImage}
+        />
       )}
     </div>
   );

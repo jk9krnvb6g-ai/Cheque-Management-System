@@ -366,4 +366,40 @@ export const apiClient = {
       body: JSON.stringify(payload),
     });
   },
+
+  // 7. System Auto-Update & GitHub Sync
+  async getSystemUpdateStatus(): Promise<{
+    success: boolean;
+    currentVersion: string;
+    latestVersion: string;
+    targetPath: string;
+    hasBatches: { buildIis: boolean; startBackend: boolean };
+    databaseConnected: boolean;
+    platform: string;
+  }> {
+    return await request('/system/update/status');
+  },
+
+  async triggerSystemUpdate(payload: {
+    targetPath?: string;
+    githubRepo?: string;
+    operator?: User;
+  }): Promise<{
+    success: boolean;
+    version: string;
+    targetPath: string;
+    completedAt: string;
+    stepLogs: {
+      step: number;
+      title: string;
+      status: 'SUCCESS' | 'WARNING' | 'FAILED';
+      message: string;
+      timestamp: string;
+    }[];
+  }> {
+    return await request('/system/update/sync', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
 };

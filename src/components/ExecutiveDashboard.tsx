@@ -41,6 +41,12 @@ export const ExecutiveDashboard: React.FC<ExecutiveDashboardProps> = ({
   const defaultFiscal = getFiscalYearRange();
   const [startDate, setStartDate] = useState(defaultFiscal.start);
   const [endDate, setEndDate] = useState(defaultFiscal.end);
+  const [selectedFiscalYear, setSelectedFiscalYear] = useState<string>('ALL');
+
+  const availableFiscalYears: string[] = useMemo(() => {
+    const years = Array.from(new Set(cheques.map((c) => (c.fiscalYear ? String(c.fiscalYear) : '')).filter(Boolean))).sort().reverse();
+    return years.length ? years : ['2568', '2567'];
+  }, [cheques]);
 
   const allPrintLogs: ChequePrintLog[] = useMemo(() => StorageService.getPrintLogs(), []);
 
@@ -66,14 +72,15 @@ export const ExecutiveDashboard: React.FC<ExecutiveDashboardProps> = ({
     }
   };
 
-  // Filter cheques within range
+  // Filter cheques within range & fiscal year
   const filteredCheques = useMemo(() => {
     return cheques.filter(c => {
+      if (selectedFiscalYear !== 'ALL' && String(c.fiscalYear || '') !== selectedFiscalYear) return false;
       if (startDate && c.stubDate < startDate) return false;
       if (endDate && c.stubDate > endDate) return false;
       return true;
     });
-  }, [cheques, startDate, endDate]);
+  }, [cheques, startDate, endDate, selectedFiscalYear]);
 
   // Filter print logs within range (by printedAt date)
   const filteredPrintLogs = useMemo(() => {
@@ -214,6 +221,46 @@ export const ExecutiveDashboard: React.FC<ExecutiveDashboardProps> = ({
             <span>พิมพ์รายงานเสนอผู้บริหาร</span>
           </button>
         </div>
+      </div>
+
+      {/* Fiscal Year Filter Bar */}
+      <div className="flex flex-wrap items-center gap-2 p-2.5 bg-red-50 border border-red-200 rounded-xl">
+        <span className="text-xs font-black text-red-900 px-1 flex items-center gap-1.5">
+          <Calendar className="w-4 h-4 text-red-700" />
+          <span>แบ่งตามปีงบประมาณ:</span>
+        </span>
+        <button
+          type="button"
+          onClick={() => setSelectedFiscalYear('ALL')}
+          className={`px-3 py-1 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+            selectedFiscalYear === 'ALL'
+              ? 'bg-red-800 text-white shadow-xs'
+              : 'text-red-900 hover:bg-red-100'
+          }`}
+        >
+          ทุกปีงบ ({cheques.length})
+        </button>
+        {availableFiscalYears.map((fy) => {
+          const count = cheques.filter((c) => String(c.fiscalYear || '') === fy).length;
+          const isSelected = selectedFiscalYear === fy;
+          return (
+            <button
+              key={fy}
+              type="button"
+              onClick={() => setSelectedFiscalYear(fy)}
+              className={`px-3 py-1 text-xs font-bold rounded-lg transition-all cursor-pointer flex items-center gap-1 ${
+                isSelected
+                  ? 'bg-red-800 text-white shadow-xs'
+                  : 'bg-white text-red-900 border border-red-200 hover:bg-red-100'
+              }`}
+            >
+              <span>ปีงบ {fy}</span>
+              <span className={`px-1.5 py-0.2 rounded-full text-[10px] ${isSelected ? 'bg-red-950 text-red-100' : 'bg-red-100 text-red-800'}`}>
+                {count}
+              </span>
+            </button>
+          );
+        })}
       </div>
 
       {/* Timeframe Filter Bar */}

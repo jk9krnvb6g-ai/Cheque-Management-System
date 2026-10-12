@@ -366,6 +366,28 @@ export const AddTemplateModal: React.FC<AddTemplateModalProps> = ({
                 />
               </label>
             )}
+
+            <div className="mt-2 flex items-center gap-2">
+              <input
+                type="url"
+                placeholder="หรือระบุ URL จาก GitHub: https://raw.githubusercontent.com/..."
+                value={customBgImageUrl?.startsWith('http') ? customBgImageUrl : ''}
+                onChange={(e) => {
+                  const val = e.target.value.trim();
+                  if (val) {
+                    const normalized = val.includes('/blob/')
+                      ? val.replace('github.com/', 'raw.githubusercontent.com/').replace('/blob/', '/')
+                      : val;
+                    setCustomBgImageUrl(normalized);
+                    setImageFileName('GitHub Image Template');
+                  } else {
+                    setCustomBgImageUrl(null);
+                    setImageFileName(null);
+                  }
+                }}
+                className="w-full px-3 py-1.5 text-xs bg-white border border-slate-300 rounded-lg font-mono placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-emerald-500 text-slate-800"
+              />
+            </div>
           </div>
 
           {/* Action Buttons */}

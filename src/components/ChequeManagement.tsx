@@ -6,6 +6,7 @@ import {
   Plus,
   Search,
   Filter,
+  Calendar,
   Printer,
   History,
   Edit2,
@@ -57,6 +58,13 @@ export const ChequeManagement: React.FC<ChequeManagementProps> = ({
   const [maxAmount, setMaxAmount] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'ISSUED' | 'NOT_ISSUED' | 'VOID'>('ALL');
   const [bankFilter, setBankFilter] = useState<'ALL' | 'KTB' | 'BAAC' | 'GSB'>('ALL');
+  const [fiscalYearFilter, setFiscalYearFilter] = useState<string>('ALL');
+
+  // Available Fiscal Years
+  const availableFiscalYears: string[] = React.useMemo(() => {
+    const years = Array.from(new Set(cheques.map((c) => (c.fiscalYear ? String(c.fiscalYear) : '')).filter(Boolean))).sort().reverse();
+    return years.length ? years : ['2568', '2567'];
+  }, [cheques]);
 
   // Batch Selection State
   const [selectedChequeIds, setSelectedChequeIds] = useState<string[]>([]);
@@ -97,7 +105,12 @@ export const ChequeManagement: React.FC<ChequeManagementProps> = ({
 
   // Filtered Cheques
   const filteredCheques = cheques.filter((item) => {
-    // 1. Text search
+    // 1. Fiscal Year filter
+    if (fiscalYearFilter !== 'ALL' && String(item.fiscalYear || '') !== fiscalYearFilter) {
+      return false;
+    }
+
+    // 1.1 Text search
     if (searchTerm.trim()) {
       const term = searchTerm.toLowerCase();
       const matchDika = (item.dikaNumber || '').toLowerCase().includes(term);
@@ -219,6 +232,7 @@ export const ChequeManagement: React.FC<ChequeManagementProps> = ({
     setMaxAmount('');
     setStatusFilter('ALL');
     setBankFilter('ALL');
+    setFiscalYearFilter('ALL');
     setSelectedChequeIds([]);
   };
 
@@ -442,6 +456,51 @@ export const ChequeManagement: React.FC<ChequeManagementProps> = ({
             </button>
           </div>
 
+        </div>
+
+        {/* Fiscal Year (ปีงบประมาณ) Filter Bar */}
+        <div className="pt-2 border-t border-slate-100 flex flex-wrap items-center gap-2 text-xs">
+          <span className="text-red-950 font-black flex items-center gap-1.5 mr-1 bg-red-50 border border-red-200 px-2 py-1 rounded-lg">
+            <Calendar className="w-3.5 h-3.5 text-red-700" />
+            <span>แบ่งตามปีงบประมาณ:</span>
+          </span>
+
+          <button
+            type="button"
+            onClick={() => setFiscalYearFilter('ALL')}
+            className={`px-3 py-1.5 font-bold rounded-lg transition-all cursor-pointer flex items-center gap-1.5 ${
+              fiscalYearFilter === 'ALL'
+                ? 'bg-red-800 text-white shadow-xs'
+                : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+            }`}
+          >
+            <span>ทุกปีงบ</span>
+            <span className={`px-1.5 py-0.2 rounded-full text-[10px] ${fiscalYearFilter === 'ALL' ? 'bg-red-950 text-red-100' : 'bg-white text-slate-700 font-semibold'}`}>
+              {cheques.length}
+            </span>
+          </button>
+
+          {availableFiscalYears.map((fy) => {
+            const count = cheques.filter((c) => String(c.fiscalYear || '') === fy).length;
+            const isSelected = fiscalYearFilter === fy;
+            return (
+              <button
+                key={fy}
+                type="button"
+                onClick={() => setFiscalYearFilter(fy)}
+                className={`px-3 py-1.5 font-bold rounded-lg transition-all cursor-pointer flex items-center gap-1.5 ${
+                  isSelected
+                    ? 'bg-red-800 text-white shadow-xs'
+                    : 'bg-red-50 text-red-900 border border-red-200 hover:bg-red-100'
+                }`}
+              >
+                <span>ปีงบ {fy}</span>
+                <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${isSelected ? 'bg-red-950 text-red-100' : 'bg-white text-red-800'}`}>
+                  {count}
+                </span>
+              </button>
+            );
+          })}
         </div>
 
         {/* Status and Bank Filter Pills/Buttons */}

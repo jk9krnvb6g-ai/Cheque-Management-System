@@ -5,6 +5,7 @@ import { formatThaiDate, formatThaiDateTime, formatChequePrintDate, getTodayISOD
 import { ChequeBackground } from './ChequeBackground';
 import { ZoomController } from './ZoomController';
 import { AddTemplateModal } from './AddTemplateModal';
+import { GitHubChequeTemplateModal } from './GitHubChequeTemplateModal';
 import { PrinterFeedGuide, FEED_DIRECTION_LABELS } from './PrinterFeedGuide';
 import { printChequeElement } from '../utils/printUtils';
 import { generateChequePdf } from '../utils/pdfGenerator';
@@ -24,6 +25,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Download,
+  Github,
 } from 'lucide-react';
 
 interface ChequePrintModalProps {
@@ -89,6 +91,20 @@ export const ChequePrintModal: React.FC<ChequePrintModalProps> = ({
   const [isTestPrint, setIsTestPrint] = useState<boolean>(false);
   const [isSavedOffset, setIsSavedOffset] = useState<boolean>(false);
   const [isAdvancedMode, setIsAdvancedMode] = useState<boolean>(false); // Easy/Simple view by default
+  const [isGitHubModalOpen, setIsGitHubModalOpen] = useState<boolean>(false);
+
+  const handleApplyGitHubImage = (imageUrl: string, mode: 'CHEQUE_REAL' | 'A4_TEST') => {
+    const updated = {
+      ...currentTemplate,
+      customBgImageUrl: imageUrl,
+    };
+    StorageService.saveTemplate(updated, currentUser);
+    setTemplates({
+      ...templates,
+      [selectedBank]: updated,
+    });
+    setShowBackgroundGuide(true);
+  };
 
   // Initialize offset and fields when template, bank, or activeCheque changes
   React.useEffect(() => {
@@ -798,6 +814,17 @@ export const ChequePrintModal: React.FC<ChequePrintModalProps> = ({
               </div>
 
               <div className="flex items-center gap-2">
+                {/* Load Template Image from GitHub */}
+                <button
+                  type="button"
+                  onClick={() => setIsGitHubModalOpen(true)}
+                  className="px-2.5 py-1 rounded-lg text-xs font-bold transition-all border bg-slate-900 hover:bg-slate-800 text-white border-slate-900 flex items-center gap-1.5 cursor-pointer shadow-xs"
+                  title="เลือกแบบรูปเช็คจริง หรือแผ่นทาบ A4 จาก GitHub Repository"
+                >
+                  <Github className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>แบบรูป GitHub</span>
+                </button>
+
                 {/* Toggle preview in feed orientation */}
                 <button
                   type="button"
@@ -1177,6 +1204,18 @@ export const ChequePrintModal: React.FC<ChequePrintModalProps> = ({
             setTemplates(updated);
             setSelectedBank(newCode);
           }}
+        />
+      )}
+
+      {/* GitHub Cheque Template Loader Modal */}
+      {isGitHubModalOpen && (
+        <GitHubChequeTemplateModal
+          isOpen={isGitHubModalOpen}
+          onClose={() => setIsGitHubModalOpen(false)}
+          selectedBank={selectedBank}
+          currentTemplate={currentTemplate}
+          currentUser={currentUser}
+          onApplyTemplateImage={handleApplyGitHubImage}
         />
       )}
     </div>
