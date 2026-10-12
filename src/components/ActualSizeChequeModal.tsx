@@ -3,6 +3,7 @@ import { BankTemplateConfig, User, CHEQUE_FONT_OPTIONS } from '../types';
 import { EditableFieldKey } from './InteractiveChequeCanvas';
 import { ChequeBackground } from './ChequeBackground';
 import { StorageService } from '../utils/storage';
+import { printChequeElement } from '../utils/printUtils';
 import {
   X,
   Printer,
@@ -430,7 +431,18 @@ export const ActualSizeChequeModal: React.FC<ActualSizeChequeModalProps> = ({
   };
 
   const handlePrintTest = () => {
-    window.print();
+    if (paperRef.current) {
+      printChequeElement(paperRef.current, {
+        title: `แผ่นทดสอบA4_${liveConfig.bankNameThai}`,
+        widthMm: liveConfig.widthMm,
+        heightMm: liveConfig.heightMm,
+        bankName: liveConfig.bankNameThai,
+        isTestSheet: true,
+        fontFamily: liveConfig.fontFamily,
+      });
+    } else {
+      window.print();
+    }
   };
 
   if (!isOpen) return null;

@@ -819,8 +819,13 @@ router.post('/sync/push', async (req, res) => {
                             full_name = VALUES(full_name),
                             position = VALUES(position),
                             role = VALUES(role),
-                            status = VALUES(status)`,
-                        [u.id, u.username, u.passwordHash || '1234', u.fullName, u.position || '', u.role || 'USER', u.status || 'ACTIVE']
+                            status = VALUES(status),
+                            password_hash = CASE
+                              WHEN VALUES(password_hash) IS NOT NULL AND VALUES(password_hash) != ''
+                              THEN VALUES(password_hash)
+                              ELSE password_hash
+                            END`,
+                        [u.id, u.username, (u.passwordHash && u.passwordHash.length > 5) ? u.passwordHash : (u.username === 'admin' ? '8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918' : '03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4'), u.fullName, u.position || '', u.role || 'USER', u.status || 'ACTIVE']
                     );
                     importedUsers++;
                 } catch (e) {}

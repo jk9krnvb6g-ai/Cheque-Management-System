@@ -177,11 +177,15 @@ export const ChequePrintModal: React.FC<ChequePrintModalProps> = ({
     const printZone = document.getElementById('cheque-print-zone');
     if (printZone) {
       printChequeElement(printZone, {
-        title: `พิมพ์เช็ค_${activeCheque.chequePayeeName || 'สั่งจ่าย'}`,
+        title: testMode
+          ? `แผ่นทดสอบA4_${currentTemplate.bankNameThai}`
+          : `พิมพ์เช็ค_${activeCheque.chequePayeeName || 'สั่งจ่าย'}`,
         widthMm: currentTemplate.widthMm,
         heightMm: currentTemplate.heightMm,
         feedDirection,
         isTestSheet: testMode,
+        bankName: currentTemplate.bankNameThai,
+        fontFamily: currentTemplate.fontFamily,
         onComplete: () => {
           if (!testMode) {
             const finalReason = isReprint ? (reprintReason === 'อื่น ๆ' ? `อื่น ๆ: ${reprintOtherNote}` : reprintReason) : undefined;

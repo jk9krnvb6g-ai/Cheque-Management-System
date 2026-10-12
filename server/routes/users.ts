@@ -126,16 +126,24 @@ userRouter.put('/:id', async (req: Request, res: Response) => {
       return res.status(404).json({ success: false, message: 'ไม่พบผู้ใช้ในระบบ' });
     }
 
-    const updatedUser: User = {
-      ...existing,
+    const userUpdates: Partial<User> = {
       fullName: fullName !== undefined ? fullName.trim() : existing.fullName,
       position: position !== undefined ? position.trim() : existing.position,
       role: role !== undefined ? role : existing.role,
       status: status !== undefined ? status : existing.status,
-      passwordHash: password ? sha256(password) : existing.passwordHash,
+      username: existing.username,
     };
+    if (password && typeof password === 'string' && password.trim().length >= 4) {
+      userUpdates.passwordHash = sha256(password.trim());
+    }
 
-    const inMysql = await mysqlUsers.update(existing.id, updatedUser);
+    const inMysql = await mysqlUsers.update(existing.id, userUpdates);
+
+    const updatedUser: User = {
+      ...existing,
+      ...userUpdates,
+      passwordHash: userUpdates.passwordHash || existing.passwordHash,
+    };
 
     if (operator) {
       await mysqlAuditLogs.add({

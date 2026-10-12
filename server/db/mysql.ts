@@ -445,6 +445,18 @@ export async function ensureTablesAndSeeds(): Promise<void> {
           [u.id, u.username, u.passwordHash, u.fullName, u.position, u.role, u.status, u.createdAt]
         );
       }
+    } else {
+      // Auto-repair any missing or empty password_hash in existing users in MySQL
+      try {
+        await connection.query(
+          `UPDATE users 
+           SET password_hash = CASE 
+             WHEN username = 'admin' THEN '8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918'
+             ELSE '03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4'
+           END
+           WHERE password_hash IS NULL OR password_hash = '' OR TRIM(password_hash) = ''`
+        );
+      } catch {}
     }
 
     // Seed templates if empty
@@ -623,6 +635,27 @@ export const mysqlUsers = {
     try {
       if (isMysqlConnected && pool) {
         await withConnection(async (conn) => {
+          // ดึง password_hash เดิมจากฐานข้อมูล (กรณีผู้ใช้นี้มีอยู่แล้ว) เพื่อไม่ให้รหัสผ่านถูกเขียนทับด้วยค่าว่าง
+          let existingUserHash: string | null = null;
+          try {
+            const [rows] = await conn.query<any[]>(
+              'SELECT password_hash FROM users WHERE id = ? OR LOWER(username) = ? LIMIT 1',
+              [cleanUser.id, cleanUser.username.toLowerCase().trim()]
+            );
+            if (rows && rows.length > 0 && rows[0].password_hash) {
+              existingUserHash = rows[0].password_hash;
+            }
+          } catch {}
+
+          const defaultHash = cleanUser.username === 'admin'
+            ? '8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918'
+            : '03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4';
+
+          // ป้องกันไม่ให้ password_hash หายหรือกลายเป็นค่าว่างเด็ดขาด
+          const pwdHashToStore = (cleanUser.passwordHash && typeof cleanUser.passwordHash === 'string' && cleanUser.passwordHash.trim().length > 0)
+            ? cleanUser.passwordHash.trim()
+            : (existingUserHash || defaultHash);
+
           await conn.query(
             `INSERT INTO users (id, username, password_hash, full_name, position, role, status, created_at)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -631,11 +664,15 @@ export const mysqlUsers = {
                position = VALUES(position),
                role = VALUES(role),
                status = VALUES(status),
-               password_hash = VALUES(password_hash)`,
+               password_hash = CASE
+                 WHEN VALUES(password_hash) IS NOT NULL AND VALUES(password_hash) != ''
+                 THEN VALUES(password_hash)
+                 ELSE users.password_hash
+               END`,
             [
               cleanUser.id,
               cleanUser.username.toLowerCase().trim(),
-              cleanUser.passwordHash,
+              pwdHashToStore,
               cleanUser.fullName.trim(),
               cleanUser.position || 'เจ้าหน้าที่การเงินและบัญชี',
               cleanUser.role || 'USER',
@@ -690,9 +727,10 @@ export const mysqlUsers = {
             fields.push('status = ?');
             values.push(cleanUpdates.status);
           }
-          if (cleanUpdates.passwordHash !== undefined) {
+          // อัปเดต password_hash เฉพาะเมื่อมีค่ารหัสผ่านใหม่ที่ไม่ใช่ค่าว่างเท่านั้น! ห้ามลบหรือเซ็ตเป็นค่าว่างเด็ดขาด
+          if (cleanUpdates.passwordHash && typeof cleanUpdates.passwordHash === 'string' && cleanUpdates.passwordHash.trim().length > 0) {
             fields.push('password_hash = ?');
-            values.push(cleanUpdates.passwordHash);
+            values.push(cleanUpdates.passwordHash.trim());
           }
 
           if (fields.length) {
@@ -1424,6 +1462,18 @@ export async function repairThaiCharset(): Promise<{ success: boolean; message: 
       // Delete test/orphaned users in MySQL (11111, 22222)
       try {
         await connection.query("DELETE FROM users WHERE username IN ('11111', '22222', '112222') OR id IN ('11111', '22222')");
+      } catch {}
+
+      // Auto-repair missing or blank password_hash in users table
+      try {
+        await connection.query(
+          `UPDATE users 
+           SET password_hash = CASE 
+             WHEN username = 'admin' THEN '8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918'
+             ELSE '03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4'
+           END
+           WHERE password_hash IS NULL OR password_hash = '' OR TRIM(password_hash) = ''`
+        );
       } catch {}
 
       // Repair users

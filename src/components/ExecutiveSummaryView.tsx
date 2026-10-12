@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Cheque } from '../types';
-import { formatThaiDate, formatThaiDateTime } from '../utils/dateUtils';
+import { formatThaiDate, formatThaiDateTime, getThaiFiscalYear } from '../utils/dateUtils';
 import { ChequeDetailModal } from './ChequeDetailModal';
 import {
   TrendingUp,
@@ -34,6 +34,7 @@ export const ExecutiveSummaryView: React.FC<ExecutiveSummaryViewProps> = ({
   onNavigateToHistory,
 }) => {
   const [timeFilter, setTimeFilter] = useState<'ALL' | 'MONTH' | 'TODAY'>('ALL');
+  const [selectedFiscalYear, setSelectedFiscalYear] = useState<number | 'ALL'>('ALL');
 
   // Cheque Detail popup state
   const [selectedChequeForModal, setSelectedChequeForModal] = useState<Cheque | null>(null);
@@ -51,11 +52,60 @@ export const ExecutiveSummaryView: React.FC<ExecutiveSummaryViewProps> = ({
   const currentMonthPrefix = now.toISOString().slice(0, 7); // YYYY-MM
   const todayStr = now.toISOString().slice(0, 10); // YYYY-MM-DD
 
+  // Available Fiscal Years
+  const availableFiscalYears = useMemo(() => {
+    const years = new Set<number>();
+    cheques.forEach((c) => {
+      const fy = c.fiscalYear || getThaiFiscalYear(c.chequeDate || c.stubDate);
+      if (fy) years.add(fy);
+    });
+    if (years.size === 0) {
+      years.add(getThaiFiscalYear());
+    }
+    return Array.from(years).sort((a, b) => b - a);
+  }, [cheques]);
+
+  // Fiscal Year Statistics Breakdown across all cheques
+  const fiscalYearStats = useMemo(() => {
+    return availableFiscalYears.map((year) => {
+      const yearCheques = cheques.filter((c) => {
+        const fy = c.fiscalYear || getThaiFiscalYear(c.chequeDate || c.stubDate);
+        return fy === year;
+      });
+      const active = yearCheques.filter((c) => c.status !== 'VOID');
+      const totalAmount = active.reduce((sum, c) => sum + (c.netPaidAmount || c.totalAmount), 0);
+      const printed = active.filter((c) => c.printCount > 0);
+      const pending = active.filter((c) => c.printCount === 0);
+      const voidCount = yearCheques.filter((c) => c.status === 'VOID').length;
+
+      return {
+        year,
+        totalCheques: yearCheques.length,
+        activeCount: active.length,
+        totalAmount,
+        printedCount: printed.length,
+        printedAmount: printed.reduce((sum, c) => sum + (c.netPaidAmount || c.totalAmount), 0),
+        pendingCount: pending.length,
+        pendingAmount: pending.reduce((sum, c) => sum + (c.netPaidAmount || c.totalAmount), 0),
+        voidCount,
+      };
+    });
+  }, [cheques, availableFiscalYears]);
+
+  // Cheques filtered by Fiscal Year
+  const fiscalFilteredCheques = useMemo(() => {
+    if (selectedFiscalYear === 'ALL') return cheques;
+    return cheques.filter((c) => {
+      const fy = c.fiscalYear || getThaiFiscalYear(c.chequeDate || c.stubDate);
+      return fy === selectedFiscalYear;
+    });
+  }, [cheques, selectedFiscalYear]);
+
   // Active / Void / Pending / Printed
-  const activeCheques = cheques.filter((c) => c.status !== 'VOID');
-  const voidCheques = cheques.filter((c) => c.status === 'VOID');
-  const printedCheques = cheques.filter((c) => c.status !== 'VOID' && c.printCount > 0);
-  const pendingCheques = cheques.filter((c) => c.status !== 'VOID' && c.printCount === 0);
+  const activeCheques = fiscalFilteredCheques.filter((c) => c.status !== 'VOID');
+  const voidCheques = fiscalFilteredCheques.filter((c) => c.status === 'VOID');
+  const printedCheques = fiscalFilteredCheques.filter((c) => c.status !== 'VOID' && c.printCount > 0);
+  const pendingCheques = fiscalFilteredCheques.filter((c) => c.status !== 'VOID' && c.printCount === 0);
 
   // Recently printed cheques for Print History Widget
   const recentPrintedCheques = [...printedCheques]
@@ -134,9 +184,42 @@ export const ExecutiveSummaryView: React.FC<ExecutiveSummaryViewProps> = ({
           </p>
         </div>
 
-        {/* Time Filter & Print Report */}
+        {/* Filters & Print Report */}
         <div className="flex flex-wrap items-center gap-2">
-          {/* Filter Buttons */}
+          {/* Fiscal Year Filter Pills */}
+          <div className="flex items-center gap-1 p-1 bg-red-50 rounded-xl border border-red-200">
+            <span className="text-[11px] font-black text-red-900 px-1.5 flex items-center gap-1">
+              <Calendar className="w-3.5 h-3.5 text-red-700" />
+              <span>ปีงบ:</span>
+            </span>
+            <button
+              type="button"
+              onClick={() => setSelectedFiscalYear('ALL')}
+              className={`px-2.5 py-1 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                selectedFiscalYear === 'ALL'
+                  ? 'bg-red-800 text-white shadow-xs'
+                  : 'text-red-900 hover:bg-red-100'
+              }`}
+            >
+              ทุกปีงบ
+            </button>
+            {availableFiscalYears.map((fy) => (
+              <button
+                key={fy}
+                type="button"
+                onClick={() => setSelectedFiscalYear(fy)}
+                className={`px-2.5 py-1 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                  selectedFiscalYear === fy
+                    ? 'bg-red-800 text-white shadow-xs'
+                    : 'text-red-900 hover:bg-red-100'
+                }`}
+              >
+                {fy}
+              </button>
+            ))}
+          </div>
+
+          {/* Time Filter Buttons */}
           <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-xl border border-slate-200">
             <button
               type="button"
@@ -181,6 +264,79 @@ export const ExecutiveSummaryView: React.FC<ExecutiveSummaryViewProps> = ({
             <Printer className="w-4 h-4 text-red-600" />
             <span>พิมพ์รายงานสรุป (A4)</span>
           </button>
+        </div>
+      </div>
+
+      {/* Fiscal Year Breakdown Section (สรุปจำแนกตามปีงบประมาณ) */}
+      <div className="bg-white border-2 border-red-200 rounded-2xl p-5 shadow-xs space-y-3">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 border-b border-slate-100 pb-2.5">
+          <div className="flex items-center gap-2">
+            <Calendar className="w-5 h-5 text-red-700" />
+            <h2 className="text-base font-extrabold text-slate-900">
+              สรุปภาพรวมจำแนกตามปีงบประมาณ (Fiscal Year Breakdown)
+            </h2>
+          </div>
+          <span className="text-xs text-slate-500 font-semibold">
+            {selectedFiscalYear === 'ALL'
+              ? 'แสดงข้อมูลทุกปีงบ (คลิกที่ปีงบเพื่อเลือกเฉพาะปี)'
+              : `กำลังแสดงข้อมูลเฉพาะปีงบ ${selectedFiscalYear} (คลิกซ้ำเพื่อยกเลิก)`}
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+          {fiscalYearStats.map((stat) => {
+            const isSelected = selectedFiscalYear === stat.year;
+            return (
+              <div
+                key={stat.year}
+                onClick={() => setSelectedFiscalYear(isSelected ? 'ALL' : stat.year)}
+                className={`p-3.5 rounded-xl border-2 transition-all cursor-pointer relative overflow-hidden group active:scale-[0.99] ${
+                  isSelected
+                    ? 'bg-red-50 border-red-600 ring-2 ring-red-300 shadow-md'
+                    : 'bg-slate-50/80 hover:bg-red-50/40 border-slate-200 hover:border-red-300 shadow-2xs'
+                }`}
+                title={`คลิกเพื่อ${isSelected ? 'แสดงทุกปีงบ' : 'กรองเฉพาะปีงบ ' + stat.year}`}
+              >
+                <div className="flex items-center justify-between mb-1.5">
+                  <div className="flex items-center gap-1.5">
+                    <span className={`px-2.5 py-0.5 rounded-lg text-xs font-black ${
+                      isSelected ? 'bg-red-700 text-white' : 'bg-slate-800 text-white'
+                    }`}>
+                      ปีงบ {stat.year}
+                    </span>
+                    {isSelected && (
+                      <span className="text-[10px] font-bold text-red-700 bg-red-100 px-1.5 py-0.2 rounded-full">
+                        กำลังเลือก
+                      </span>
+                    )}
+                  </div>
+                  <span className="text-[11px] font-bold text-slate-500">
+                    {stat.totalCheques} ฉบับ
+                  </span>
+                </div>
+
+                <div className="text-lg font-black text-slate-900 tabular-nums">
+                  {stat.totalAmount.toLocaleString('th-TH', { minimumFractionDigits: 2 })}{' '}
+                  <span className="text-xs font-bold text-slate-500">บาท</span>
+                </div>
+
+                <div className="grid grid-cols-3 gap-1.5 mt-2.5 pt-2 border-t border-slate-200 text-center text-xs">
+                  <div className="bg-white/90 p-1 rounded-lg border border-slate-200">
+                    <div className="text-[9.5px] text-emerald-700 font-bold">พิมพ์แล้ว</div>
+                    <div className="font-extrabold text-slate-800 text-xs">{stat.printedCount}</div>
+                  </div>
+                  <div className="bg-white/90 p-1 rounded-lg border border-slate-200">
+                    <div className="text-[9.5px] text-amber-700 font-bold">รอพิมพ์</div>
+                    <div className="font-extrabold text-slate-800 text-xs">{stat.pendingCount}</div>
+                  </div>
+                  <div className="bg-white/90 p-1 rounded-lg border border-slate-200">
+                    <div className="text-[9.5px] text-rose-700 font-bold">ยกเลิก</div>
+                    <div className="font-extrabold text-slate-800 text-xs">{stat.voidCount}</div>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
         </div>
       </div>
 

@@ -184,7 +184,12 @@ VALUES
 ('user_suda', 'suda', '03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4', 'นางสาวสุดา วงศ์สว่าง', 'เจ้าหน้าที่การเงินและพัสดุ', 'USER', 'ACTIVE')
 ON DUPLICATE KEY UPDATE 
   `full_name` = VALUES(`full_name`),
-  `position` = VALUES(`position`);
+  `position` = VALUES(`position`),
+  `password_hash` = CASE
+    WHEN VALUES(`password_hash`) IS NOT NULL AND VALUES(`password_hash`) != ''
+    THEN VALUES(`password_hash`)
+    ELSE `password_hash`
+  END;
 
 -- 2. เพิ่มแม่แบบพิกัดพิมพ์เช็คเริ่มต้น 3 ธนาคารหลัก
 INSERT INTO `bank_templates` (`bank_type`, `bank_name_thai`, `bank_name_eng`, `bank_color`, `width_mm`, `height_mm`, `config_json`)

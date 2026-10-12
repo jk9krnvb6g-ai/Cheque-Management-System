@@ -40,6 +40,10 @@ DELETE FROM \`users\` WHERE \`username\` IN ('11111', '22222', '112222') OR \`id
 UPDATE \`users\` SET \`full_name\` = 'นายชำนาญ การคลัง', \`position\` = 'หัวหน้ากลุ่มงานการเงินและบัญชี' WHERE \`username\` = 'admin';
 UPDATE \`users\` SET \`full_name\` = 'นายสมชาย บริการดี', \`position\` = 'นักวิชาการเงินและบัญชีชำนาญการ' WHERE \`username\` = 'somchai';
 
+-- กู้คืน password_hash ป้องกันกรณีช่องรหัสผ่านใน MySQL ว่างเปล่า
+UPDATE \`users\` SET \`password_hash\` = '8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918' WHERE (\`password_hash\` IS NULL OR \`password_hash\` = '' OR TRIM(\`password_hash\`) = '') AND \`username\` = 'admin';
+UPDATE \`users\` SET \`password_hash\` = '03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4' WHERE (\`password_hash\` IS NULL OR \`password_hash\` = '' OR TRIM(\`password_hash\`) = '');
+
 SET FOREIGN_KEY_CHECKS = 1;`;
 
   const handleCopySql = () => {
